@@ -1,13 +1,19 @@
+import importlib
 import io
 import json
 from types import SimpleNamespace
 from unittest.mock import patch
 
+import huggingface_hub
 import pytest
 
 from trackio import deploy
 from trackio.bucket_storage import _list_bucket_file_paths
 from trackio.frontend_config import ResolvedFrontend
+
+hub_httpx = importlib.import_module(
+    "httpx2" if int(huggingface_hub.__version__.split(".")[0]) >= 2 else "httpx"
+)
 
 
 def test_get_source_install_dependencies_includes_mcp():
@@ -199,3 +205,74 @@ def test_deploy_as_static_space_rejects_private_true(tmp_path, monkeypatch):
             private=True,
             frontend_dir=frontend_dir,
         )
+
+
+@pytest.mark.parametrize("login_required", [False, True])
+def test_deploy_as_space_uses_supported_create_repo_arguments(
+    monkeypatch, login_required
+):
+    class CreatedSpace(Exception):
+        pass
+
+    errors = [CreatedSpace()]
+    if login_required:
+        errors.insert(
+            0,
+            deploy.HfHubHTTPError(
+                "Unauthorized",
+                response=hub_httpx.Response(
+                    401, request=hub_httpx.Request("POST", "https://huggingface.co")
+                ),
+            ),
+        )
+    monkeypatch.setattr(deploy, "on_spaces", lambda: False)
+    with (
+        patch.object(deploy.huggingface_hub, "create_repo", autospec=True) as create,
+        patch.object(deploy.huggingface_hub, "login") as login,
+    ):
+        create.side_effect = errors
+        with pytest.raises(CreatedSpace):
+            deploy.deploy_as_space("username/trackio")
+        assert create.call_count == 1 + login_required
+        for call in create.call_args_list:
+            assert "space_storage" not in call.kwargs
+        assert login.call_count == login_required
+
+
+@pytest.mark.parametrize("hub_version", ["1.10.0", "2.2.0"])
+def test_deploy_as_space_explicit_legacy_storage(monkeypatch, hub_version):
+    monkeypatch.setattr(deploy, "on_spaces", lambda: False)
+    monkeypatch.setattr(deploy.huggingface_hub, "__version__", hub_version)
+    with patch.object(deploy.huggingface_hub, "create_repo") as create:
+        if hub_version.startswith("2."):
+            with pytest.raises(ValueError, match="Use bucket_id"):
+                deploy.deploy_as_space("username/trackio", space_storage="small")
+            create.assert_not_called()
+        else:
+            create.side_effect = RuntimeError("created")
+            with pytest.raises(RuntimeError, match="created"):
+                deploy.deploy_as_space("username/trackio", space_storage="small")
+            assert create.call_args.kwargs["space_storage"] == "small"
+
+
+@pytest.mark.parametrize(
+    "wait", [deploy.wait_until_space_exists, deploy._wait_until_space_running]
+)
+def test_space_wait_retries_hub_transport_errors(monkeypatch, wait):
+    monkeypatch.setattr(deploy.time, "sleep", lambda _: None)
+    with patch.object(deploy.huggingface_hub, "HfApi") as api:
+        api.return_value.space_info.side_effect = [
+            hub_httpx.ConnectError("temporary connection failure"),
+            SimpleNamespace(runtime=SimpleNamespace(stage="RUNNING")),
+        ]
+        wait("username/trackio")
+        assert api.return_value.space_info.call_count == 2
+
+
+def test_retry_hf_write_retries_hub_read_timeout(monkeypatch):
+    from unittest.mock import Mock
+
+    monkeypatch.setattr(deploy.time, "sleep", lambda _: None)
+    write = Mock(side_effect=[hub_httpx.ReadTimeout("timeout"), "uploaded"])
+    assert deploy._retry_hf_write("upload", write) == "uploaded"
+    assert write.call_count == 2

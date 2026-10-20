@@ -1,8 +1,15 @@
+import importlib
+
+import huggingface_hub
 import pytest
 
 import trackio
 from trackio import bump as bump_module
 from trackio.bump import BumpError
+
+hub_httpx = importlib.import_module(
+    "httpx2" if int(huggingface_hub.__version__.split(".")[0]) >= 2 else "httpx"
+)
 
 
 def test_check_bumpable_refuses_unsafe_versions(monkeypatch):
@@ -39,3 +46,17 @@ def test_cli_bump_accepts_positional_or_space_flag(monkeypatch, argv):
     monkeypatch.setattr("sys.argv", argv)
     cli.main()
     assert calls == [(("u/s",), {"new_space_id": None, "new_bucket_id": None})]
+
+
+def test_wait_for_stage_retries_hub_transport_errors(monkeypatch):
+    from types import SimpleNamespace
+    from unittest.mock import Mock
+
+    monkeypatch.setattr(bump_module.time, "sleep", lambda _: None)
+    api = Mock()
+    api.get_space_runtime.side_effect = [
+        hub_httpx.ConnectError("temporary connection failure"),
+        SimpleNamespace(stage="RUNNING"),
+    ]
+    bump_module._wait_for_stage("username/trackio", frozenset({"RUNNING"}), 30, api)
+    assert api.get_space_runtime.call_count == 2

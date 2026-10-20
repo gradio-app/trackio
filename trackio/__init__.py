@@ -326,7 +326,8 @@ def init(
             to a Hugging Face Space. Can also be set via the ``TRACKIO_SERVER_URL`` environment
             variable. Ignored when ``space_id`` or ``TRACKIO_SPACE_ID`` is set.
         space_storage ([`~huggingface_hub.SpaceStorage`], *optional*):
-            Choice of persistent storage tier.
+            Legacy persistent storage tier (huggingface_hub 1.x only).
+            With huggingface_hub 2.x, use `bucket_id` instead.
         dataset_id (`str`, *optional*):
             Deprecated: persisting trackio data to a Hugging Face Dataset will be
             removed in a future version of trackio. Use `bucket_id` (a Hugging

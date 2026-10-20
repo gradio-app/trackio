@@ -2235,7 +2235,7 @@ tensorboard = [
 requires-dist = [
     { name = "brotli", specifier = ">=1.0.0,<2.0.0" },
     { name = "gradio-client", specifier = ">=2.0.0,<3.0.0" },
-    { name = "huggingface-hub", specifier = ">=1.10.0,<2" },
+    { name = "huggingface-hub", specifier = ">=1.10.0,<3" },
     { name = "mcp", marker = "extra == 'mcp'", specifier = ">=1.0.0,<2.0.0" },
     { name = "numpy", specifier = "<3.0.0" },
     { name = "nvidia-ml-py", marker = "extra == 'gpu'", specifier = ">=12.0.0" },
