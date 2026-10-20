@@ -10,10 +10,8 @@ from collections import Counter
 from importlib.resources import files
 from pathlib import Path
 
-import httpx
 import huggingface_hub
 from gradio_client import handle_file
-from httpx import ReadTimeout
 from huggingface_hub import Volume
 from huggingface_hub.errors import (
     BucketNotFoundError,
@@ -35,6 +33,7 @@ from trackio.remote_client import RemoteClient
 from trackio.sqlite_storage import SQLiteStorage
 from trackio.utils import (
     get_or_create_project_hash,
+    hub_httpx,
     on_spaces,
     preprocess_space_and_dataset_ids,
     project_artifacts_dir,
@@ -101,7 +100,7 @@ def _retry_hf_write(op_name: str, fn, retries: int = 4, initial_delay: float = 1
     for attempt in range(1, retries + 1):
         try:
             return fn()
-        except ReadTimeout:
+        except hub_httpx.ReadTimeout:
             if attempt == retries:
                 raise
             print(
@@ -361,7 +360,6 @@ def _upload_source_tree(
 
 def deploy_as_space(
     space_id: str,
-    space_storage: huggingface_hub.SpaceStorage | None = None,
     dataset_id: str | None = None,
     bucket_id: str | None = None,
     private: bool | None = None,
@@ -386,7 +384,6 @@ def deploy_as_space(
             space_id,
             private=private,
             space_sdk="gradio",
-            space_storage=space_storage,
             repo_type="space",
             exist_ok=True,
         )
@@ -398,7 +395,6 @@ def deploy_as_space(
                 space_id,
                 private=private,
                 space_sdk="gradio",
-                space_storage=space_storage,
                 repo_type="space",
                 exist_ok=True,
             )
@@ -497,7 +493,6 @@ def deploy_as_space(
 
 def create_space_if_not_exists(
     space_id: str,
-    space_storage: huggingface_hub.SpaceStorage | None = None,
     dataset_id: str | None = None,
     bucket_id: str | None = None,
     private: bool | None = None,
@@ -510,8 +505,6 @@ def create_space_if_not_exists(
     Args:
         space_id (`str`):
             The ID of the Space to create.
-        space_storage ([`~huggingface_hub.SpaceStorage`], *optional*):
-            Choice of persistent storage tier for the Space.
         dataset_id (`str`, *optional*):
             Deprecated: persisting trackio data to a Hugging Face Dataset will be
             removed in a future version of trackio. Use `bucket_id` (a Hugging
@@ -554,7 +547,6 @@ def create_space_if_not_exists(
         if resolved_frontend.is_custom:
             deploy_as_space(
                 space_id,
-                space_storage,
                 dataset_id,
                 bucket_id,
                 private,
@@ -575,7 +567,6 @@ def create_space_if_not_exists(
     )
     deploy_as_space(
         space_id,
-        space_storage,
         dataset_id,
         bucket_id,
         private,
@@ -642,7 +633,7 @@ def _wait_until_space_running(space_id: str, timeout: int = 300) -> None:
                     return
         except RuntimeError:
             raise
-        except (huggingface_hub.utils.HfHubHTTPError, httpx.RequestError):
+        except (huggingface_hub.utils.HfHubHTTPError, hub_httpx.RequestError):
             pass
         time.sleep(delay)
         delay = min(delay * 1.5, 15)
@@ -671,7 +662,7 @@ def wait_until_space_exists(
         try:
             hf_api.space_info(space_id)
             return
-        except (huggingface_hub.utils.HfHubHTTPError, httpx.RequestError):
+        except (huggingface_hub.utils.HfHubHTTPError, hub_httpx.RequestError):
             time.sleep(delay)
             delay = min(delay * 2, 60)
     raise TimeoutError("Waiting for space to exist took longer than expected")
