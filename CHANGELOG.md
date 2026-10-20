@@ -1,5 +1,11 @@
 # trackio
 
+## 0.43.1
+
+### Features
+
+- [#726](https://github.com/gradio-app/trackio/pull/726) [`d4e4588`](https://github.com/gradio-app/trackio/commit/d4e4588baf1d0e0dd80a2786fdd1da99c92a61c2) - Fix Spaces deadlocks in run artifacts and move_run.  Thanks @abidlabs!
+
 ## 0.43.0
 
 ### Features
