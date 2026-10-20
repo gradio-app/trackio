@@ -96,3 +96,14 @@ describe("startViewStateBridge", () => {
     expect(win.listenerCount()).toBe(0);
   });
 });
+
+it("preserves active filters and an empty selection in snapshot links", () => {
+  const filters = [[{ key: '["optimizer"]', operator: "=", value: "adam" }]];
+  cleanups.push(registerSnapshotProvider("app", () => ({ project: "demo", runs: [], run_filter: "train", config_filter: filters, total_runs: 240 })));
+  const snapshot = buildSnapshot({ location: { href: "https://demo.hf.space/?run_ids=old" } });
+  expect(snapshot).toMatchObject({ run_filter: "train", config_filter: filters, total_runs: 240 });
+  const params = new URL(snapshot.view_url).searchParams;
+  expect(params.get("run_ids")).toBe("");
+  expect(params.get("run_filter")).toBe("train");
+  expect(JSON.parse(params.get("config_filter"))).toEqual(filters);
+});
