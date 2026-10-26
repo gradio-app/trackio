@@ -653,6 +653,13 @@ def test_local_dashboard_supports_mcp(temp_dir):
                 assert _structured_content(run_summary)["run"] == run_name
                 assert _structured_content(run_summary)["num_logs"] == 1
 
+                denied = await session.call_tool(
+                    "rename_run",
+                    {"project": project, "old_name": run_name, "new_name": "x"},
+                )
+                assert getattr(denied, "is_error", None) or denied.isError
+                assert "write_token is required" in denied.content[0].text
+
     try:
         asyncio.run(check_mcp())
     finally:
