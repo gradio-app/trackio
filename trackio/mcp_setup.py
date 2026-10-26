@@ -34,17 +34,24 @@ def _assert_mcp_mutation_access(
         )
 
 
-def create_mcp_integration() -> tuple[list[Any], Any]:
-    from mcp.server.fastmcp import FastMCP  # noqa: PLC0415
+def _create_mcp_server() -> tuple[Any, dict[str, Any]]:
+    server_kwargs: dict[str, Any] = {
+        "instructions": "Inspect and manage Trackio experiment data.",
+        "log_level": "WARNING",
+    }
+    try:
+        from mcp.server.mcpserver import MCPServer  # noqa: PLC0415
+    except ImportError:
+        from mcp.server.fastmcp import FastMCP  # noqa: PLC0415
 
+        return FastMCP("Trackio", streamable_http_path="/", **server_kwargs), {}
+    return MCPServer("Trackio", **server_kwargs), {"streamable_http_path": "/"}
+
+
+def create_mcp_integration() -> tuple[list[Any], Any]:
     import trackio.server as trackio_server  # noqa: PLC0415
 
-    mcp = FastMCP(
-        "Trackio",
-        instructions="Inspect and manage Trackio experiment data.",
-        streamable_http_path="/",
-        log_level="WARNING",
-    )
+    mcp, http_app_kwargs = _create_mcp_server()
 
     mcp.add_tool(
         trackio_server.get_all_projects,
@@ -149,7 +156,7 @@ def create_mcp_integration() -> tuple[list[Any], Any]:
         _assert_mcp_mutation_access(hf_token=hf_token, write_token=write_token)
         return trackio_server.force_sync()
 
-    mcp_app = mcp.streamable_http_app()
+    mcp_app = mcp.streamable_http_app(**http_app_kwargs)
 
     @asynccontextmanager
     async def mcp_lifespan_context(app):
