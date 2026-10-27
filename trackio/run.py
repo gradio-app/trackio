@@ -22,6 +22,7 @@ from trackio.alerts import (
 )
 from trackio.apple_gpu import AppleGpuMonitor, apple_gpu_available
 from trackio.artifact import Artifact
+from trackio.console import ConsoleCapture, get_launch_command
 from trackio.cpu import CpuMonitor
 from trackio.gpu import GpuMonitor, gpu_available
 from trackio.histogram import Histogram
@@ -65,6 +66,7 @@ class Run:
         cpu_log_interval: float = 10.0,
         webhook_url: str | None = None,
         webhook_min_level: AlertLevel | str | None = None,
+        capture_console: bool = False,
     ):
         """
         Initialize a Run for logging metrics to Trackio.
@@ -107,6 +109,9 @@ class Run:
                 delivery. For example, `AlertLevel.WARN` sends only WARN and
                 ERROR alerts to webhook destinations. Can also be set via
                 `TRACKIO_WEBHOOK_MIN_LEVEL`.
+            capture_console: Whether to capture everything written to stdout and
+                stderr and store it with the run so it can be viewed and downloaded
+                from the run's page in the dashboard.
         """
         self.url = url
         self.project = project
@@ -164,6 +169,12 @@ class Run:
         self.config["_Username"] = self._get_username()
         self.config["_Created"] = datetime.now(timezone.utc).isoformat()
         self.config["_Group"] = self.group
+        try:
+            command = get_launch_command()
+        except Exception:
+            command = None
+        if command is not None:
+            self.config["_Command"] = command
 
         self._queued_logs: list[LogEntry] = []
         self._queued_system_logs: list[SystemLogEntry] = []
@@ -225,6 +236,18 @@ class Run:
                 self._warn_once(
                     "cpu-monitor",
                     f"trackio.init() failed to start automatic CPU logging: {e}. Continuing without CPU metric auto-logging.",
+                )
+
+        self._console_capture: ConsoleCapture | None = None
+        if capture_console:
+            try:
+                self._console_capture = ConsoleCapture(self)
+                self._console_capture.start()
+            except Exception as e:
+                self._console_capture = None
+                self._warn_once(
+                    "console-capture",
+                    f"trackio.init() failed to start console capture: {e}. Continuing without capturing console output.",
                 )
 
     def _hf_token_for_remote(self) -> str | None:
@@ -1116,6 +1139,10 @@ class Run:
                 f"trackio could not queue the artifact '{file_path}' for run '{self.name}': {e}. User code will continue, but this artifact could be missing.",
             )
 
+    def _upload_console_file(self, file_path: Path) -> None:
+        if not self._is_local:
+            self._queue_upload(file_path, step=None)
+
     def _save_upload_locally(
         self,
         file_path,
@@ -1819,6 +1846,16 @@ class Run:
 
     def finish(self):
         try:
+            if self._console_capture is not None:
+                try:
+                    self._console_capture.stop()
+                except Exception as e:
+                    self._warn_once(
+                        "finish-console-capture",
+                        f"trackio.finish() could not save the final console output: {e}.",
+                    )
+                self._console_capture = None
+
             if self._gpu_monitor is not None:
                 try:
                     self._gpu_monitor.stop()

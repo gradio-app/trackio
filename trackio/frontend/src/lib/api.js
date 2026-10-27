@@ -150,6 +150,13 @@ export async function getRunSummary(project, run) {
   return await callApi("/get_run_summary", params);
 }
 
+export async function getConsoleOutput(project, run, maxChars) {
+  if (await isStaticMode()) return null;
+  const params = { project, ...normalizeRun(run) };
+  if (maxChars !== undefined) params.max_chars = maxChars;
+  return await callApi("/get_console_output", params);
+}
+
 export async function getAlerts(project, run, level, since) {
   const params = { project, ...normalizeRun(run), level, since };
   if (await isStaticMode()) return staticApi.getAlerts(project, run, level, since);
