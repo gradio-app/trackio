@@ -1,5 +1,16 @@
 # trackio
 
+## 0.44.0
+
+### Features
+
+- [#726](https://github.com/gradio-app/trackio/pull/726) [`d4e4588`](https://github.com/gradio-app/trackio/commit/d4e4588baf1d0e0dd80a2786fdd1da99c92a61c2) - Fix Spaces deadlocks in run artifacts and move_run.  Thanks @abidlabs!
+- [#736](https://github.com/gradio-app/trackio/pull/736) [`64ecdfd`](https://github.com/gradio-app/trackio/commit/64ecdfd54b43675a3e9eb3d66c625bcb22a3f544) - Require patched brotli and allow latest Pillow and mcp versions.  Thanks @abidlabs!
+- [#737](https://github.com/gradio-app/trackio/pull/737) [`3fb551a`](https://github.com/gradio-app/trackio/commit/3fb551a49909775e5335df74f6bfdd906c05994d) - Fix click at every peak in audio logged from float16 arrays.  Thanks @abidlabs!
+- [#738](https://github.com/gradio-app/trackio/pull/738) [`a0f6286`](https://github.com/gradio-app/trackio/commit/a0f628691a4d47d25ff97d287185e099f12defd5) - Keep run colors stable when new runs are added.  Thanks @abidlabs!
+- [#720](https://github.com/gradio-app/trackio/pull/720) [`dab607a`](https://github.com/gradio-app/trackio/commit/dab607af5d361bac4bae74657da770246157538e) - Add structured configuration filters for dashboard runs.  Thanks @abidlabs!
+- [#723](https://github.com/gradio-app/trackio/pull/723) [`934606d`](https://github.com/gradio-app/trackio/commit/934606d2bd574102e6133ff836a004b0adf91af5) - Capture each run's launch command and, optionally, its console output.  Thanks @abidlabs!
+
 ## 0.43.0
 
 ### Features
