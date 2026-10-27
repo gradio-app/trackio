@@ -1,4 +1,5 @@
 <script>
+  import { compileConfigFilter, filterRunsByConfig } from "../lib/runFilters.js";
   import { tick, untrack } from "svelte";
   import LoadingTrackio from "../components/LoadingTrackio.svelte";
   import {
@@ -16,6 +17,8 @@
     project = null,
     runs = [],
     filterText = "",
+    configFilters = [],
+    runConfigs = {},
     onRunsChanged = null,
     runMutationAllowed = true,
   } = $props();
@@ -38,10 +41,12 @@
   let renameValue = $state("");
   let renameInput = $state(null);
 
+  let configMatch = $derived(compileConfigFilter(configFilters));
+  let configRuns = $derived(filterRunsByConfig(runsData, runConfigs, configMatch));
   let filteredRuns = $derived.by(() => {
-    if (!filterText || !filterText.trim()) return runsData;
-    const matches = new Set(filterMetricsByRegex(runsData.map((r) => r.name), filterText));
-    return runsData.filter((r) => matches.has(r.name));
+    if (!filterText || !filterText.trim()) return configRuns;
+    const matches = new Set(filterMetricsByRegex(configRuns.map((r) => r.name), filterText));
+    return configRuns.filter((r) => matches.has(r.name));
   });
 
   let selectedVisibleRuns = $derived(
@@ -211,7 +216,7 @@
       <p>Refresh this page or wait for the dashboard to poll; new runs appear in the table with step counts.</p>
     </div>
   {:else}
-    {#if filterText}
+    {#if filterText || configFilters.flat().some((rule) => rule.key)}
       <div class="filter-count-row">
         <span class="filter-count">{filteredRuns.length} of {runsData.length} runs</span>
       </div>

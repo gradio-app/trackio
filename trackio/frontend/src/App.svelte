@@ -1,4 +1,5 @@
 <script>
+  import { compileConfigFilter, filterRunsByConfig, filterRunsByName, parseConfigFilters } from "./lib/runFilters.js";
   import { onMount } from "svelte";
   import Navbar from "./components/Navbar.svelte";
   import Sidebar from "./components/Sidebar.svelte";
@@ -98,6 +99,23 @@
   let showHeaders = $state(true);
   let showComparer = $state(false);
   let filterText = $state("");
+  let configFilters = $state([]);
+
+  let filterQuery = $derived.by(() => {
+    urlTick;
+    return JSON.stringify([
+      getQueryParam("project"),
+      getQueryParam("run_filter"),
+      getQueryParam("config_filter"),
+    ]);
+  });
+
+  $effect(() => {
+    const [project, nameFilter, configFilter] = JSON.parse(filterQuery);
+    const fromUrl = selectedProject === project;
+    configFilters = fromUrl ? parseConfigFilters(configFilter) : [];
+    filterText = fromUrl ? nameFilter ?? "" : "";
+  });
   let metricColumns = $state([]);
   let requestedUrlXAxis = $state(null);
   let urlXAxisApplied = $state(false);
@@ -175,8 +193,13 @@
     return axis === "step" || axis === "time" || metricColumns.includes(axis);
   }
 
+  let configMatch = $derived(compileConfigFilter(configFilters));
+  let selectedRunIds = $derived(new Set(selectedRuns));
   let selectedRunRecords = $derived(
-    runs.filter((run) => selectedRuns.includes(runKey(run))),
+    filterRunsByConfig(
+      filterRunsByName(runs.filter((run) => selectedRunIds.has(runKey(run))), filterText),
+      runConfigs, configMatch,
+    ),
   );
 
   function handleNavigate(page) {
@@ -461,6 +484,9 @@
       log_x: logScaleX,
       log_y: logScaleY,
       metric_filter: metricFilter,
+      run_filter: filterText,
+      config_filter: configFilters,
+      total_runs: runs.length,
     }));
     const stopViewStateBridge = startViewStateBridge();
 
@@ -554,7 +580,7 @@
     if (!selectedProject) return;
     const runIdsParam = getQueryParam("run_ids");
     const runsParam = getQueryParam("runs");
-    if (!runIdsParam && !runsParam) {
+    if (runIdsParam == null && !runsParam) {
       urlRunsFromQueryApplied = true;
       return;
     }
@@ -563,7 +589,7 @@
       return;
     }
     let wanted;
-    if (runIdsParam) {
+    if (runIdsParam != null) {
       const ids = runIdsParam.split(",").map((s) => s.trim()).filter(Boolean);
       const validKeys = new Set(runs.map((r) => runKey(r)));
       wanted = ids.filter((id) => validKeys.has(id));
@@ -572,7 +598,7 @@
       const wantedNames = new Set(names);
       wanted = runs.filter((r) => wantedNames.has(r.name)).map((r) => runKey(r));
     }
-    if (wanted.length) {
+    if (runIdsParam != null || wanted.length) {
       selectedRuns = wanted;
     }
     urlRunsFromQueryApplied = true;
@@ -624,6 +650,7 @@
       bind:realtimeEnabled
       bind:showHeaders
       bind:showComparer
+      bind:configFilters
       bind:filterText
       {metricColumns}
       {availableSystemDevices}
@@ -709,6 +736,8 @@
           project={selectedProject}
           {runs}
           {filterText}
+          {configFilters}
+          {runConfigs}
           onRunsChanged={refreshRunsAndMutation}
           runMutationAllowed={mutationStatus.allowed}
         />
