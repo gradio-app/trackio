@@ -25,7 +25,9 @@ def _ensure_space_ready(test_space_id):
     )
 
     _reset_test_space(space_id)
-    deploy.create_space_if_not_exists(space_id, None, dataset_id, bucket_id, None)
+    deploy.create_space_if_not_exists(
+        space_id, dataset_id=dataset_id, bucket_id=bucket_id
+    )
     _wait_for_space_ready(space_id)
 
 
