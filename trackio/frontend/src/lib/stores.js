@@ -153,7 +153,7 @@ export function buildColorMap(runs) {
   runs.forEach((run, i) => {
     const key =
       typeof run === "string" ? run : (run?.id ?? run?.name ?? String(i));
-    map[key] = getColorForIndex(i);
+    map[key] = getColorForIndex(runs.length - 1 - i);
   });
   return map;
 }
