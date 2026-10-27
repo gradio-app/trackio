@@ -13,6 +13,13 @@ import huggingface_hub
 import numpy as np
 from huggingface_hub.constants import HF_HOME
 
+try:
+    from huggingface_hub.utils import httpx
+except ImportError:
+    import httpx
+
+hub_httpx = httpx
+
 if TYPE_CHECKING:
     from trackio.commit_scheduler import CommitScheduler
     from trackio.dummy_commit_scheduler import DummyCommitScheduler

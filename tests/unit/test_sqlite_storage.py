@@ -4,7 +4,9 @@ import platform
 import random
 import sqlite3
 import tempfile
+import threading
 import time
+from contextlib import contextmanager
 from pathlib import Path
 
 import orjson
@@ -972,3 +974,93 @@ def test_run_records_query_work_does_not_grow_with_metric_count(temp_dir, monkey
     assert SQLiteStorage.get_run_records("records") == expected
     # Count SQLite VM instructions rather than using a noisy wall-clock budget.
     assert instructions < small_query_work * 3
+
+
+def _run_in_thread(target, timeout):
+    results = {}
+
+    def call():
+        results["value"] = target()
+
+    worker = threading.Thread(target=call, daemon=True)
+    worker.start()
+    worker.join(timeout=timeout)
+    assert not worker.is_alive(), "move_run deadlocked"
+    return results["value"]
+
+
+@pytest.mark.parametrize("new_project", ["src", "s.r.c"])
+def test_move_run_into_same_project_is_noop_on_spaces(
+    temp_dir, monkeypatch, new_project
+):
+    monkeypatch.setenv("SYSTEM", "spaces")
+    try:
+        SQLiteStorage.bulk_log("src", "r1", [{"x": 1}], steps=[0], run_id="id1")
+
+        moved = _run_in_thread(
+            lambda: SQLiteStorage.move_run("src", "r1", new_project, run_id="id1"),
+            timeout=5,
+        )
+
+        assert moved is False
+        assert SQLiteStorage.get_runs("src") == ["r1"]
+        assert len(SQLiteStorage.get_logs("src", "r1", run_id="id1")) == 1
+    finally:
+        trackio.sqlite_storage._close_all_persistent_connections()
+
+
+def test_crossed_move_runs_do_not_deadlock_on_spaces(temp_dir, monkeypatch):
+    monkeypatch.setenv("SYSTEM", "spaces")
+    original = SQLiteStorage._get_process_lock
+    barrier = threading.Barrier(2)
+    held = threading.local()
+
+    @contextmanager
+    def rendezvous_before_nested_lock(project):
+        depth = getattr(held, "depth", 0)
+        if depth:
+            try:
+                barrier.wait(timeout=2)
+            except threading.BrokenBarrierError:
+                pass
+        with original(project):
+            held.depth = depth + 1
+            try:
+                yield
+            finally:
+                held.depth = depth
+
+    try:
+        SQLiteStorage.bulk_log("a", "from-a", [{"x": 1}], steps=[0], run_id="id-a")
+        SQLiteStorage.bulk_log("b", "from-b", [{"x": 2}], steps=[0], run_id="id-b")
+        monkeypatch.setattr(
+            SQLiteStorage,
+            "_get_process_lock",
+            staticmethod(rendezvous_before_nested_lock),
+        )
+
+        results = {}
+        movers = [
+            threading.Thread(
+                target=lambda: results.__setitem__(
+                    "a", SQLiteStorage.move_run("a", "from-a", "b", run_id="id-a")
+                ),
+                daemon=True,
+            ),
+            threading.Thread(
+                target=lambda: results.__setitem__(
+                    "b", SQLiteStorage.move_run("b", "from-b", "a", run_id="id-b")
+                ),
+                daemon=True,
+            ),
+        ]
+        for mover in movers:
+            mover.start()
+        for mover in movers:
+            mover.join(timeout=15)
+        assert not any(mover.is_alive() for mover in movers), "move_run deadlocked"
+        assert results == {"a": True, "b": True}
+        assert SQLiteStorage.get_runs("a") == ["from-b"]
+        assert SQLiteStorage.get_runs("b") == ["from-a"]
+    finally:
+        trackio.sqlite_storage._close_all_persistent_connections()

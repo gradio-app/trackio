@@ -603,6 +603,10 @@ def test_get_tab_availability_reflects_data(temp_dir):
     assert result["traces"] is False
 
 
+def _structured_content(result):
+    return getattr(result, "structured_content", None) or result.structuredContent
+
+
 def test_local_dashboard_supports_mcp(temp_dir):
     pytest.importorskip("mcp")
     from mcp import ClientSession
@@ -622,11 +626,8 @@ def test_local_dashboard_supports_mcp(temp_dir):
     )
 
     async def check_mcp() -> None:
-        async with streamable_http_client(f"{url.rstrip('/')}/mcp") as (
-            read_stream,
-            write_stream,
-            _,
-        ):
+        async with streamable_http_client(f"{url.rstrip('/')}/mcp") as streams:
+            read_stream, write_stream = streams[0], streams[1]
             async with ClientSession(read_stream, write_stream) as session:
                 await session.initialize()
                 tools = await session.list_tools()
@@ -635,13 +636,13 @@ def test_local_dashboard_supports_mcp(temp_dir):
                 assert "get_run_summary" in tool_names
 
                 projects = await session.call_tool("get_all_projects")
-                assert project in projects.structuredContent["result"]
+                assert project in _structured_content(projects)["result"]
 
                 runs = await session.call_tool(
                     "get_runs_for_project",
                     {"project": project},
                 )
-                result = runs.structuredContent["result"]
+                result = _structured_content(runs)["result"]
                 assert len(result) == 1
                 assert result[0]["name"] == run_name
 
@@ -649,8 +650,15 @@ def test_local_dashboard_supports_mcp(temp_dir):
                     "get_run_summary",
                     {"project": project, "run": run_name},
                 )
-                assert run_summary.structuredContent["run"] == run_name
-                assert run_summary.structuredContent["num_logs"] == 1
+                assert _structured_content(run_summary)["run"] == run_name
+                assert _structured_content(run_summary)["num_logs"] == 1
+
+                denied = await session.call_tool(
+                    "rename_run",
+                    {"project": project, "old_name": run_name, "new_name": "x"},
+                )
+                assert getattr(denied, "is_error", None) or denied.isError
+                assert "write_token is required" in denied.content[0].text
 
     try:
         asyncio.run(check_mcp())
