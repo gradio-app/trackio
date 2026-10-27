@@ -20,9 +20,9 @@ dependencies = [
     "python-multipart>=0.0.9,<1.0.0",
     "uvicorn[standard]>=0.30.0,<1.0.0",
     "numpy<3.0.0",
-    "pillow<13.0.0",
+    "pillow<14.0.0",
     "orjson>=3.0,<4.0.0",
-    "brotli>=1.0.0,<2.0.0",
+    "brotli>=1.2.1,<2.0.0",
     "tomli>=2.0.0; python_version < '3.11'",
 ]
 classifiers = [
@@ -39,7 +39,7 @@ repository = "https://github.com/gradio-app/trackio"
 [project.optional-dependencies]
 dev = [
     "ruff==0.9.3",
-    "pytest>=8.0.0,<9.0.0",
+    "pytest>=8.0.0,<10.0.0",
     "playwright==1.60.0",
     "pytest-playwright>=0.7.0,<1.0.0",
 ]
@@ -61,7 +61,7 @@ spaces = [
     "pyarrow>=21.0",
 ]
 mcp = [
-    "mcp>=1.0.0,<2.0.0",
+    "mcp>=1.30.0,<3.0.0",
 ]
 
 [project.scripts]

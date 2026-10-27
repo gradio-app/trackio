@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import os
 import secrets
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, contextmanager
 from typing import Any
 
 from starlette.routing import Mount
@@ -34,17 +34,35 @@ def _assert_mcp_mutation_access(
         )
 
 
-def create_mcp_integration() -> tuple[list[Any], Any]:
-    from mcp.server.fastmcp import FastMCP  # noqa: PLC0415
+def _create_mcp_server() -> tuple[Any, dict[str, Any], type[Exception]]:
+    server_kwargs: dict[str, Any] = {
+        "instructions": "Inspect and manage Trackio experiment data.",
+        "log_level": "WARNING",
+    }
+    try:
+        from mcp.server.mcpserver import MCPServer  # noqa: PLC0415
+        from mcp.server.mcpserver.exceptions import ToolError  # noqa: PLC0415
+    except ImportError:
+        from mcp.server.fastmcp import FastMCP  # noqa: PLC0415
+        from mcp.server.fastmcp.exceptions import ToolError  # noqa: PLC0415
 
+        server = FastMCP("Trackio", streamable_http_path="/", **server_kwargs)
+        return server, {}, ToolError
+    server = MCPServer("Trackio", **server_kwargs)
+    return server, {"streamable_http_path": "/"}, ToolError
+
+
+def create_mcp_integration() -> tuple[list[Any], Any]:
     import trackio.server as trackio_server  # noqa: PLC0415
 
-    mcp = FastMCP(
-        "Trackio",
-        instructions="Inspect and manage Trackio experiment data.",
-        streamable_http_path="/",
-        log_level="WARNING",
-    )
+    mcp, http_app_kwargs, ToolError = _create_mcp_server()
+
+    @contextmanager
+    def reported_to_client():
+        try:
+            yield
+        except ValueError as e:
+            raise ToolError(str(e)) from e
 
     mcp.add_tool(
         trackio_server.get_all_projects,
@@ -117,8 +135,9 @@ def create_mcp_integration() -> tuple[list[Any], Any]:
         hf_token: str | None = None,
         write_token: str | None = None,
     ) -> bool:
-        _assert_mcp_mutation_access(hf_token=hf_token, write_token=write_token)
-        return SQLiteStorage.delete_run(project, run)
+        with reported_to_client():
+            _assert_mcp_mutation_access(hf_token=hf_token, write_token=write_token)
+            return SQLiteStorage.delete_run(project, run)
 
     @mcp.tool(
         description="Rename a run. On Spaces, pass an hf_token with write access.",
@@ -131,8 +150,9 @@ def create_mcp_integration() -> tuple[list[Any], Any]:
         hf_token: str | None = None,
         write_token: str | None = None,
     ) -> bool:
-        _assert_mcp_mutation_access(hf_token=hf_token, write_token=write_token)
-        SQLiteStorage.rename_run(project, old_name, new_name)
+        with reported_to_client():
+            _assert_mcp_mutation_access(hf_token=hf_token, write_token=write_token)
+            SQLiteStorage.rename_run(project, old_name, new_name)
         return True
 
     @mcp.tool(
@@ -146,10 +166,11 @@ def create_mcp_integration() -> tuple[list[Any], Any]:
         hf_token: str | None = None,
         write_token: str | None = None,
     ) -> bool:
-        _assert_mcp_mutation_access(hf_token=hf_token, write_token=write_token)
+        with reported_to_client():
+            _assert_mcp_mutation_access(hf_token=hf_token, write_token=write_token)
         return trackio_server.force_sync()
 
-    mcp_app = mcp.streamable_http_app()
+    mcp_app = mcp.streamable_http_app(**http_app_kwargs)
 
     @asynccontextmanager
     async def mcp_lifespan_context(app):
