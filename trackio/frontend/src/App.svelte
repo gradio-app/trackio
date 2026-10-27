@@ -101,10 +101,20 @@
   let filterText = $state("");
   let configFilters = $state([]);
 
+  let filterQuery = $derived.by(() => {
+    urlTick;
+    return JSON.stringify([
+      getQueryParam("project"),
+      getQueryParam("run_filter"),
+      getQueryParam("config_filter"),
+    ]);
+  });
+
   $effect(() => {
-    const fromUrl = selectedProject === getQueryParam("project");
-    configFilters = fromUrl ? parseConfigFilters(getQueryParam("config_filter")) : [];
-    filterText = fromUrl ? getQueryParam("run_filter") ?? "" : "";
+    const [project, nameFilter, configFilter] = JSON.parse(filterQuery);
+    const fromUrl = selectedProject === project;
+    configFilters = fromUrl ? parseConfigFilters(configFilter) : [];
+    filterText = fromUrl ? nameFilter ?? "" : "";
   });
   let metricColumns = $state([]);
   let requestedUrlXAxis = $state(null);
