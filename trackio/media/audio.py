@@ -107,6 +107,8 @@ class TrackioAudio(TrackioMedia):
 
         # Floating types: normalize to peak 1.0, then scale to int16
         if np.issubdtype(arr.dtype, np.floating):
+            if arr.dtype == np.float16:
+                arr = arr.astype(np.float32)
             max_abs = float(np.max(np.abs(arr))) if arr.size else 0.0
             if max_abs > 0.0:
                 arr = arr / max_abs
