@@ -124,6 +124,17 @@ def test_write_wav_with_non_int16_inputs(tmp_path: Path, dtype, generator) -> No
     assert pcm.size > 0
 
 
+@pytest.mark.parametrize("dtype", [np.float16, np.float32, np.float64])
+def test_write_wav_float_peaks_stay_positive(tmp_path: Path, dtype) -> None:
+    mono = np.array([0.25, 1.0, -1.0, 0.5, -0.5], dtype=dtype)
+    out = tmp_path / f"peaks_{np.dtype(dtype).name}.wav"
+    TrackioAudio.write_audio(
+        data=mono, sample_rate=SAMPLE_RATE, filename=out, format="wav"
+    )
+    _, _, _, pcm = _read_wav(out)
+    assert pcm.tolist() == [8191, 32767, -32767, 16383, -16383]
+
+
 def test_silence_float_no_division_by_zero(tmp_path: Path) -> None:
     mono = np.zeros(SAMPLE_RATE // 10, dtype=np.float32)
     out = tmp_path / "silence.wav"
