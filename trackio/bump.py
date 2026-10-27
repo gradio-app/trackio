@@ -30,7 +30,11 @@ from trackio import deploy
 from trackio.bucket_storage import _list_bucket_file_paths, create_bucket_if_not_exists
 from trackio.remote_client import RemoteClient, _space_id_to_url
 from trackio.sqlite_storage import DB_EXT, SCHEMA_VERSION, SQLiteStorage
-from trackio.utils import PAUSE_WRITES_VARIABLE, preprocess_space_and_dataset_ids
+from trackio.utils import (
+    PAUSE_WRITES_VARIABLE,
+    hub_httpx,
+    preprocess_space_and_dataset_ids,
+)
 
 MIN_BUMPABLE_VERSION = "0.21.0"
 BACKUP_PREFIX = "trackio-backups"
@@ -271,7 +275,7 @@ def _wait_for_stage(
         try:
             runtime = hf_api.get_space_runtime(space_id)
             stage = str(runtime.stage)
-        except (HfHubHTTPError, httpx.RequestError):
+        except (HfHubHTTPError, hub_httpx.RequestError):
             stage = None
         if stage in targets:
             return

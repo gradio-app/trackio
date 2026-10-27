@@ -55,7 +55,7 @@ jobs:
 
     - name: Install Python dependencies
       run: |
-        uv pip install --system -e '.[dev,tensorboard,spaces]' --prerelease=allow --python "${{ steps.setup-python.outputs.python-path }}"
+        uv pip install --system -e '.[dev,tensorboard,spaces,mcp]' --prerelease=allow --python "${{ steps.setup-python.outputs.python-path }}"
         uv pip install --system pytest --prerelease=allow --python "${{ steps.setup-python.outputs.python-path }}"
 
     - name: Build frontend

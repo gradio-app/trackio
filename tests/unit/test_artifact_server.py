@@ -3,6 +3,7 @@
 import hashlib
 import json
 import sqlite3
+import threading
 from pathlib import Path
 
 import trackio.sqlite_storage
@@ -123,6 +124,36 @@ def test_run_artifacts_and_consumers_expose_lineage(temp_dir):
         server.get_artifact_consumers("p", artifact["version_id"])[0]["run_name"]
         == "consumer"
     )
+
+
+def test_run_artifacts_does_not_deadlock_on_spaces(temp_dir, monkeypatch):
+    monkeypatch.setenv("SYSTEM", "spaces")
+    results = {}
+
+    def fetch():
+        results["producer"] = server.get_run_artifacts(
+            "p", run="producer", run_id="producer-id"
+        )
+        results["consumer"] = server.get_run_artifacts(
+            "p", run="consumer", run_id="consumer-id"
+        )
+
+    try:
+        SQLiteStorage.bulk_log(
+            "p", "producer", [{"x": 1}], steps=[0], run_id="producer-id"
+        )
+        artifact = _commit()
+        SQLiteStorage.insert_run_artifact_link(
+            "p", "consumer", "consumer-id", artifact["version_id"], "input"
+        )
+        worker = threading.Thread(target=fetch, daemon=True)
+        worker.start()
+        worker.join(timeout=10)
+        assert not worker.is_alive(), "get_run_artifacts deadlocked on Spaces"
+        assert [item["name"] for item in results["producer"]["output"]] == ["m"]
+        assert [item["name"] for item in results["consumer"]["input"]] == ["m"]
+    finally:
+        trackio.sqlite_storage._close_all_persistent_connections()
 
 
 def test_tab_availability_reflects_artifacts(temp_dir):
