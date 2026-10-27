@@ -1,3 +1,4 @@
+import hashlib
 import os
 import re
 import shlex
@@ -68,6 +69,10 @@ def get_launch_command() -> str | None:
 
 def _timestamp() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _console_identity(run_id: str) -> str:
+    return hashlib.sha256(run_id.encode("utf-8")).hexdigest()
 
 
 class ConsoleCapture:
@@ -151,29 +156,60 @@ class ConsoleCapture:
             segments = _NEWLINE_RE.split(_ANSI_ESCAPE_RE.sub("", text))
             for i, segment in enumerate(segments):
                 if "\r" in segment:
-                    self._partial = segment.rsplit("\r", 1)[1]
+                    self._partial = ""
+                    segment = segment.rsplit("\r", 1)[1]
                     self._partial_time = now
-                elif segment:
+                if segment:
                     if not self._partial:
                         self._partial_time = now
-                    self._partial += segment
+                    remaining = max(
+                        0,
+                        self._remaining_bytes()
+                        - len(
+                            f"{self._partial_time} {self._partial}\n".encode("utf-8")
+                        ),
+                    )
+                    encoded = segment[: remaining + 1].encode("utf-8")
+                    self._partial += encoded[:remaining].decode(
+                        "utf-8", errors="ignore"
+                    )
+                    if len(encoded) > remaining:
+                        self._commit_line()
+                        self._truncate()
+                        break
                 if i < len(segments) - 1:
                     self._commit_line()
                     if self._truncated:
                         break
             self._dirty = True
 
+    def _remaining_bytes(self) -> int:
+        notice = f"{_timestamp()} {TRUNCATION_NOTICE}\n"
+        return MAX_TOTAL_BYTES - self._total_bytes - len(notice.encode("utf-8"))
+
+    def _append_line(self, line: str) -> None:
+        size = len(line.encode("utf-8"))
+        self._lines.append(line)
+        self._chunk_bytes += size
+        self._total_bytes += size
+        self._dirty = True
+
+    def _truncate(self) -> None:
+        if self._truncated:
+            return
+        self._partial = ""
+        self._partial_time = ""
+        self._append_line(f"{_timestamp()} {TRUNCATION_NOTICE}\n")
+        self._truncated = True
+
     def _commit_line(self) -> None:
         line = f"{self._partial_time or _timestamp()} {self._partial}\n"
         self._partial = ""
         self._partial_time = ""
-        size = len(line.encode("utf-8"))
-        if self._total_bytes + size > MAX_TOTAL_BYTES:
-            line = f"{_timestamp()} {TRUNCATION_NOTICE}\n"
-            self._truncated = True
-        self._lines.append(line)
-        self._chunk_bytes += size
-        self._total_bytes += size
+        if len(line.encode("utf-8")) > self._remaining_bytes():
+            self._truncate()
+        else:
+            self._append_line(line)
 
     def _flush_loop(self) -> None:
         while not self._stop_flag.wait(self._interval):
@@ -203,7 +239,7 @@ class ConsoleCapture:
 
     def _write_chunk(self, index: int, content: str) -> Path:
         directory = get_project_media_path(self._run.project, run=self._run.name)
-        name = f"{CONSOLE_FILE_PREFIX}{self._session}-{index:04d}{CONSOLE_FILE_SUFFIX}"
+        name = f"{CONSOLE_FILE_PREFIX}{self._session}-{_console_identity(self._run.id)}-{index:04d}{CONSOLE_FILE_SUFFIX}"
         path = directory / name
         tmp_path = directory / f".{name}.tmp"
         tmp_path.write_text(content, encoding="utf-8")
@@ -212,13 +248,22 @@ class ConsoleCapture:
 
 
 def read_console_output(
-    project: str, run: str, max_chars: int | None = DEFAULT_MAX_CHARS
+    project: str,
+    run: str,
+    run_id: str | None = None,
+    max_chars: int | None = DEFAULT_MAX_CHARS,
 ) -> dict[str, Any]:
     media_root = project_media_dir(project).resolve()
     run_dir = (media_root / run).resolve()
     if not run_dir.is_relative_to(media_root) or run_dir == media_root:
         return {"enabled": False, "text": "", "truncated": False}
-    files = sorted(run_dir.glob(f"{CONSOLE_FILE_PREFIX}*{CONSOLE_FILE_SUFFIX}"))
+    identity = _console_identity(run_id) if run_id is not None else "*"
+    files = sorted(
+        run_dir.glob(f"{CONSOLE_FILE_PREFIX}*-{identity}-*{CONSOLE_FILE_SUFFIX}")
+    )
+    if files and run_id is None:
+        identity = files[-1].name.rsplit("-", 2)[1]
+        files = [path for path in files if path.name.rsplit("-", 2)[1] == identity]
     if not files:
         return {"enabled": False, "text": "", "truncated": False}
     text = "".join(f.read_text(encoding="utf-8", errors="replace") for f in files)

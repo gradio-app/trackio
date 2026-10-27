@@ -1,6 +1,7 @@
 import io
 import logging
 import sys
+from pathlib import Path
 
 import trackio
 from trackio.console import REDACTED, redact_argv
@@ -80,3 +81,80 @@ def test_console_capture_is_off_by_default_and_env_var_enables_it(
     print("stored")
     trackio.finish()
     assert "stored" in _lines(get_console_output("console-e2e", "on")["text"])
+
+
+def test_console_output_is_scoped_to_run_id(temp_dir, monkeypatch):
+    monkeypatch.setattr(sys, "stdout", io.StringIO())
+    runs = []
+    for message in ("first output", "second output"):
+        run = trackio.init(
+            project="console-e2e",
+            name="same",
+            capture_console=True,
+            auto_log_cpu=False,
+            auto_log_gpu=False,
+        )
+        print(message)
+        trackio.log({"loss": 1})
+        trackio.finish()
+        runs.append(run)
+    for index, run in enumerate(runs):
+        output = get_console_output("console-e2e", run_id=run.id)
+        assert (
+            _lines(output["text"])[1:] == [["first output"], ["second output"]][index]
+        )
+    assert "first output" not in get_console_output("console-e2e", "same")["text"]
+    assert (
+        get_console_output("console-e2e", "same", run_id="missing")["enabled"] is False
+    )
+
+
+def test_console_capture_bounds_partial_utf8_lines(temp_dir, monkeypatch):
+    from types import SimpleNamespace
+
+    from trackio.console import TRUNCATION_NOTICE, ConsoleCapture
+
+    monkeypatch.setattr("trackio.console.MAX_TOTAL_BYTES", 300)
+    run = SimpleNamespace(
+        project="console-e2e",
+        name="bounded",
+        id="bounded",
+        _upload_console_file=lambda path: None,
+    )
+    capture = ConsoleCapture(run)
+    capture._record("prefix ")
+    capture.flush()
+    capture._record("😀" * 1000)
+    capture.flush()
+    capture.stop()
+    files = list((Path(temp_dir) / "media").rglob("console-*.log"))
+    text = "".join(path.read_text() for path in files)
+    assert sum(path.stat().st_size for path in files) <= 300
+    assert "prefix " in text
+    assert TRUNCATION_NOTICE in text
+    assert "�" not in text
+    capture._record("ignored\n")
+    assert "ignored" not in "".join(capture._lines)
+
+
+def test_console_stop_preserves_partial_after_rollover(temp_dir, monkeypatch):
+    from types import SimpleNamespace
+
+    from trackio.console import ConsoleCapture
+
+    monkeypatch.setattr("trackio.console.MAX_CHUNK_BYTES", 100)
+    run = SimpleNamespace(
+        project="console-e2e",
+        name="rollover",
+        id="rollover",
+        _upload_console_file=lambda path: None,
+    )
+    capture = ConsoleCapture(run)
+    capture._record("x" * 100 + "\nfinal partial line")
+    capture.flush()
+    capture.stop()
+    files = sorted((Path(temp_dir) / "media").rglob("console-*.log"))
+    assert _lines("".join(path.read_text() for path in files)) == [
+        "x" * 100,
+        "final partial line",
+    ]

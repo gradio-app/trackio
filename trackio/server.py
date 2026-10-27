@@ -1059,20 +1059,20 @@ def get_console_output(
     run_id: str | None = None,
     max_chars: int | None = DEFAULT_MAX_CHARS,
 ) -> dict[str, Any]:
-    if run_id is not None:
-        record = next(
-            (
-                record
-                for record in SQLiteStorage.get_run_records(project)
-                if record["id"] == run_id
-            ),
-            None,
-        )
-        if record is not None:
-            run = record["name"]
+    records = SQLiteStorage.get_run_records(project)
+    record = next(
+        (
+            record
+            for record in reversed(records)
+            if (record["id"] == run_id if run_id is not None else record["name"] == run)
+        ),
+        None,
+    )
+    if record is not None:
+        run, run_id = record["name"], record["id"]
     if not run:
         return {"enabled": False, "text": "", "truncated": False}
-    return read_console_output(project, run, max_chars=max_chars)
+    return read_console_output(project, run, run_id, max_chars=max_chars)
 
 
 def get_system_metrics_for_run(
