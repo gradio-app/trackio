@@ -143,3 +143,17 @@ describe("bulk run deletion", () => {
     expect(deleteRun).not.toHaveBeenCalled();
   });
 });
+
+
+it("combines configuration and name filtering for visible table rows", async () => {
+  component = mount(Runs, { target, props: {
+    project: "demo", filterText: "same",
+    runConfigs: { a: { batch_size: 32 }, b: { batch_size: 64 }, c: { batch_size: 32 } },
+    configFilters: [[{ key: '["batch_size"]', operator: "=", value: "32" }]],
+  } });
+  await vi.waitFor(() => expect(rows()).toHaveLength(1));
+  await click(selectAll());
+  await click(deleteButton());
+  await vi.waitFor(() => expect(deleteRun).toHaveBeenCalledOnce());
+  expect(deleteRun.mock.calls[0][1].id).toBe("a");
+});
