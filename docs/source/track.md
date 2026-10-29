@@ -401,6 +401,8 @@ TRACKIO_CAPTURE_CONSOLE=1 python train.py
 
 The captured output appears in the **Console output** section of the run's page (open a run from the **Runs** page). It refreshes every 10 seconds while the run is in progress, and the **Download** button saves the full log as a text file. Each line is stored with the UTC time it was written; the dashboard shows it in your local time. Output is saved every 10 seconds and when the run finishes, works for local runs as well as runs logged to a Space or a self-hosted server, and is capped at 20 MB per run.
 
+If the process is stopped with `SIGTERM` (a Slurm time limit, `docker stop`, or a Kubernetes eviction), output written since the last save is lost. Set [`TRACKIO_HANDLE_SIGTERM=1`](environment_variables.md#trackiohandlesigterm) to save it before the process exits.
+
 Console capture works by wrapping the `write` method of `sys.stdout` and `sys.stderr`, so it also picks up `logging` handlers configured before `trackio.init()` was called. Output written directly to the underlying file descriptors, such as messages from C extensions or subprocesses, is not captured.
 
 > **Note:** If you log to a public Space, captured console output is visible to anyone who can view the dashboard. Make sure your script doesn't print secrets before enabling console capture.
