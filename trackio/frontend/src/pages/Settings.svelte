@@ -4,10 +4,13 @@
     getThemePreference,
     setThemePreference,
   } from "../lib/theme.js";
+  import { getSavedWriteToken, saveWriteToken } from "../lib/urlTokens.js";
 
   let { spaceId = null, selectedProject = null, projects = [] } = $props();
 
   let themeChoice = $state(getThemePreference());
+  let writeToken = $state(getSavedWriteToken());
+  let writeTokenSaved = $state(false);
   let copiedIdx = $state(null);
   let cliProject = $state(null);
   let selectedAgent = $state("claude");
@@ -51,6 +54,14 @@
   function switchTheme(value) {
     themeChoice = value;
     setThemePreference(value);
+  }
+
+  function submitWriteToken(event) {
+    event.preventDefault();
+    writeToken = writeToken.trim();
+    saveWriteToken(writeToken);
+    writeTokenSaved = true;
+    setTimeout(() => { writeTokenSaved = false; }, 1500);
   }
 
   function spaceFlag() {
@@ -139,6 +150,25 @@
             </button>
           {/each}
         </div>
+      </section>
+
+      <section class="settings-section">
+        <h3 class="section-title">Write Token</h3>
+        <p class="section-desc">
+          Lets this browser rename and delete runs. Use the token from the write-access URL printed by
+          <code>trackio show</code>, or the value of <code>TRACKIO_WRITE_TOKEN</code>. It is saved in this browser only.
+        </p>
+        <form class="token-form" onsubmit={submitWriteToken}>
+          <input
+            class="selector-select token-input"
+            type="password"
+            bind:value={writeToken}
+            placeholder="Paste write token"
+            autocomplete="off"
+            aria-label="Write token"
+          />
+          <button class="token-save" type="submit">{writeTokenSaved ? "Saved" : "Save"}</button>
+        </form>
       </section>
 
       <section class="settings-section">
@@ -368,6 +398,25 @@
   .selector-select:focus {
     outline: none;
     border-color: var(--color-accent, #f97316);
+  }
+
+  .token-form {
+    display: flex;
+    gap: 8px;
+  }
+  .token-input {
+    flex: 1;
+    cursor: text;
+  }
+  .token-save {
+    padding: 6px 14px;
+    border: none;
+    border-radius: var(--radius-md, 4px);
+    background: var(--color-accent, #f97316);
+    color: white;
+    font-size: var(--text-sm, 12px);
+    font-weight: 500;
+    cursor: pointer;
   }
 
   .commands-table {
