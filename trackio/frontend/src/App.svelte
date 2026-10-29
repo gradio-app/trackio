@@ -91,6 +91,7 @@
   let selectedRuns = $state([]);
   let smoothing = $state(10);
   let panelsPerRow = $state(AUTO_PANELS_PER_ROW);
+  let mediaPerRow = $state(AUTO_PANELS_PER_ROW);
   let xAxis = $state("step");
   let logScaleX = $state(false);
   let logScaleY = $state(false);
@@ -643,6 +644,7 @@
       bind:selectedRuns
       bind:smoothing
       bind:panelsPerRow
+      bind:mediaPerRow
       bind:xAxis
       bind:logScaleX
       bind:logScaleY
@@ -728,6 +730,7 @@
           selectedRuns={selectedRunRecords}
           allRuns={runs}
           {tableTruncateLength}
+          panelsPerRow={mediaPerRow}
         />
       {:else if currentPage === "reports"}
         <Reports project={selectedProject} selectedRuns={selectedRunRecords} />
