@@ -2,4 +2,4 @@
 "trackio": minor
 ---
 
-feat:Save console output and buffered logs when a run receives SIGTERM
+feat:Add TRACKIO_HANDLE_SIGTERM to save logs when a run receives SIGTERM
