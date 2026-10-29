@@ -1,6 +1,11 @@
 from typing import Any, NewType, TypedDict
 
-from gradio_client import FileData
+
+class FileData(TypedDict):
+    path: str
+    meta: dict[str, str]
+    orig_name: str
+
 
 Sha256Digest = NewType("Sha256Digest", str)
 ETag = NewType("ETag", str)

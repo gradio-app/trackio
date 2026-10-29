@@ -133,16 +133,17 @@ run_alerts = runs[0].alerts(level="warn")
 If the Trackio dashboard is running (locally or on a Space), you can query alerts via the `/get_alerts` endpoint:
 
 ```python
-from gradio_client import Client
+import httpx2
 
-client = Client("http://127.0.0.1:7860/")
-alerts = client.predict(
-    project="my-project",
-    run=None,
-    level="error",
-    since="2025-06-01T00:00:00",
-    api_name="/get_alerts",
-)
+alerts = httpx2.post(
+    "http://127.0.0.1:7860/api/get_alerts",
+    json={
+        "project": "my-project",
+        "run": None,
+        "level": "error",
+        "since": "2025-06-01T00:00:00",
+    },
+).json()["data"]
 ```
 
 ## Webhooks

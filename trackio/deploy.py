@@ -11,7 +11,6 @@ from importlib.resources import files
 from pathlib import Path
 
 import huggingface_hub
-from gradio_client import handle_file
 from huggingface_hub import Volume
 from huggingface_hub.errors import (
     BucketNotFoundError,
@@ -29,7 +28,7 @@ from trackio.bucket_storage import (
 from trackio.cas import PARTIAL_BLOB_GLOB
 from trackio.frontend_config import resolve_frontend_dir
 from trackio.pending_uploads import replay_pending_uploads
-from trackio.remote_client import RemoteClient
+from trackio.remote_client import RemoteClient, handle_file
 from trackio.sqlite_storage import SQLiteStorage
 from trackio.utils import (
     get_or_create_project_hash,
@@ -672,8 +671,7 @@ def upload_db_to_space(project: str, space_id: str, force: bool = False) -> None
     """
     Uploads the database of a local Trackio project to a Hugging Face Space.
 
-    This uses the Trackio remote client so newer Trackio Spaces can speak the direct
-    HTTP API while older Gradio-based Spaces still work through `gradio_client`.
+    This uses the Trackio remote client, which speaks the Space's HTTP API.
 
     Args:
         project (`str`):
