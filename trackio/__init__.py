@@ -151,10 +151,18 @@ def _handle_sigterm(signum, frame):
 
 
 def _install_sigterm_handler():
-    """Turns SIGTERM (Slurm time limits, `docker stop`, Kubernetes evictions)
-    into a normal interpreter exit so the atexit cleanup still finishes the run
-    and saves buffered logs and console output. A handler that the user or a
-    framework already installed is left untouched."""
+    """When `TRACKIO_HANDLE_SIGTERM` is enabled, turns SIGTERM (Slurm time
+    limits, `docker stop`, Kubernetes evictions) into a normal interpreter exit
+    so the atexit cleanup still finishes the run and saves buffered logs and
+    console output. A handler that the user or a framework already installed is
+    left untouched."""
+    if os.environ.get("TRACKIO_HANDLE_SIGTERM", "").strip().lower() not in (
+        "1",
+        "true",
+        "yes",
+        "on",
+    ):
+        return
     if threading.current_thread() is not threading.main_thread():
         return
     try:

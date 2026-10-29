@@ -183,7 +183,7 @@ def test_sigterm_saves_console_output_and_buffered_logs(temp_dir):
     )
     result = subprocess.run(
         [sys.executable, "-c", script],
-        env={**os.environ, "TRACKIO_DIR": str(temp_dir)},
+        env={**os.environ, "TRACKIO_DIR": str(temp_dir), "TRACKIO_HANDLE_SIGTERM": "1"},
         capture_output=True,
         timeout=60,
     )
@@ -195,7 +195,19 @@ def test_sigterm_saves_console_output_and_buffered_logs(temp_dir):
     assert [log["step_value"] for log in logs] == [0, 1, 2, 3, 4]
 
 
-def test_sigterm_handler_does_not_replace_existing_handler():
+def test_sigterm_handler_is_opt_in(monkeypatch):
+    monkeypatch.delenv("TRACKIO_HANDLE_SIGTERM", raising=False)
+    previous = signal.signal(signal.SIGTERM, signal.SIG_DFL)
+    try:
+        trackio._install_sigterm_handler()
+        assert signal.getsignal(signal.SIGTERM) is signal.SIG_DFL
+    finally:
+        signal.signal(signal.SIGTERM, previous)
+
+
+def test_sigterm_handler_does_not_replace_existing_handler(monkeypatch):
+    monkeypatch.setenv("TRACKIO_HANDLE_SIGTERM", "1")
+
     def existing(signum, frame):
         pass
 

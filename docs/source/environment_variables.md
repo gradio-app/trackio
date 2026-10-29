@@ -182,6 +182,14 @@ export TRACKIO_CAPTURE_CONSOLE=1
 
 See [Capturing console output and the launch command](track.md#capturing-console-output-and-the-launch-command) for more details.
 
+### `TRACKIO_HANDLE_SIGTERM`
+
+When set to `1` or `true`, `trackio.init()` installs a `SIGTERM` handler that turns the signal into a normal exit, so the run is finished and its last metrics and console output are saved when the process is stopped by a Slurm time limit, `docker stop`, or a Kubernetes eviction. The exit code stays `143`. The handler is only installed from the main thread and only when no other `SIGTERM` handler is set. It is off by default because it changes how the whole process responds to `SIGTERM`: for example, the process waits for non-daemon threads before exiting, and frameworks that chain existing handlers (such as PyTorch Lightning's Slurm auto-requeue) will exit instead of ignoring the signal.
+
+```bash
+export TRACKIO_HANDLE_SIGTERM=1
+```
+
 ### `TRACKIO_BUCKET_ID`
 
 The ID of the Hugging Face Bucket (e.g. `username/bucketname`) used to persist Trackio data when running on a Hugging Face Space. This is normally set automatically on the Space when it is created via `trackio.init(space_id=...)` or `trackio.sync(...)`; a bucket is auto-generated from the Space ID unless an explicit `bucket_id` is provided.
