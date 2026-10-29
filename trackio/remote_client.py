@@ -91,12 +91,23 @@ def _request_timeout_for_api(
     )
 
 
-def is_transient_remote_error(exc: BaseException) -> bool:
-    if isinstance(exc, (httpx2.HTTPStatusError, gradio_client_httpx.HTTPStatusError)):
-        return exc.response.status_code >= 500
-    return isinstance(
-        exc, (httpx2.RequestError, gradio_client_httpx.RequestError, ConnectionError)
+def _http_error_types(name: str) -> tuple[type[BaseException], ...]:
+    return tuple(
+        error
+        for module in (httpx2, gradio_client_httpx)
+        if isinstance(error := getattr(module, name, None), type)
+        and issubclass(error, BaseException)
     )
+
+
+_HTTP_STATUS_ERRORS = _http_error_types("HTTPStatusError")
+_HTTP_REQUEST_ERRORS = _http_error_types("RequestError")
+
+
+def is_transient_remote_error(exc: BaseException) -> bool:
+    if isinstance(exc, _HTTP_STATUS_ERRORS):
+        return exc.response.status_code >= 500
+    return isinstance(exc, (*_HTTP_REQUEST_ERRORS, ConnectionError))
 
 
 class _TrackioHTTPClient:
