@@ -9,7 +9,7 @@ import warnings
 from pathlib import Path
 from typing import Any
 
-import httpx
+import httpx2
 import uvicorn
 from uvicorn.config import Config
 
@@ -146,7 +146,7 @@ def launch_trackio_dashboard(
 
     local_api_url = f"{local_url.rstrip('/')}/api/"
     try:
-        httpx.get(f"{local_url.rstrip('/')}/version", verify=ssl_verify, timeout=10)
+        httpx2.get(f"{local_url.rstrip('/')}/version", verify=ssl_verify, timeout=10)
     except Exception as e:
         raise RuntimeError(
             f"Could not reach Trackio server at {local_url.rstrip('/')}/version: {e}"

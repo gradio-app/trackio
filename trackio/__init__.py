@@ -12,7 +12,6 @@ from pathlib import Path
 from typing import Any
 
 import huggingface_hub
-from gradio_client import handle_file
 from huggingface_hub.errors import LocalTokenNotFoundError
 
 from trackio import context_vars, deploy, utils
@@ -58,7 +57,7 @@ from trackio.references import (
 )
 from trackio.registry import Collection as Collection
 from trackio.registry import Registry as Registry
-from trackio.remote_client import RemoteClient
+from trackio.remote_client import RemoteClient, handle_file
 from trackio.run import Run
 from trackio.server import TrackioDashboardApp, build_starlette_app_only
 from trackio.sqlite_storage import SQLiteStorage
@@ -68,6 +67,7 @@ from trackio.typehints import UploadEntry
 from trackio.utils import TRACKIO_DIR, TRACKIO_LOGO_DIR, _emit_nonfatal_warning
 
 logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("httpx2").setLevel(logging.WARNING)
 
 __version__ = json.loads(Path(__file__).parent.joinpath("package.json").read_text())[
     "version"

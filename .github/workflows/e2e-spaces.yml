@@ -82,7 +82,7 @@ jobs:
       - name: Install dependencies
         run: |
           uv pip install --system -e .[dev,spaces] --prerelease=allow
-          uv pip install --system pytest gradio-client --prerelease=allow
+          uv pip install --system pytest --prerelease=allow
 
       - name: Delete test Space if exists
         env:

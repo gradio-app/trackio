@@ -9,7 +9,6 @@ from typing import Any
 
 import huggingface_hub
 import orjson
-from gradio_client import handle_file
 
 from trackio import cas, fragments, references, utils
 from trackio._batching import _PendingBatch
@@ -31,7 +30,7 @@ from trackio.media import TrackioHtml, TrackioMedia, get_project_media_path
 from trackio.pending_uploads import classify_pending_uploads, replay_pending_uploads
 from trackio.registry import registry_backend
 from trackio.registry_storage import parse_collection_target, resolve_collection_link
-from trackio.remote_client import RemoteClient, is_transient_remote_error
+from trackio.remote_client import RemoteClient, handle_file, is_transient_remote_error
 from trackio.sqlite_storage import SQLiteStorage
 from trackio.table import Table
 from trackio.trace import Trace

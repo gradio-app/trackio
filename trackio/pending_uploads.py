@@ -2,8 +2,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from gradio_client import handle_file
-
+from trackio.remote_client import handle_file
 from trackio.sqlite_storage import SQLiteStorage
 from trackio.typehints import ARTIFACT_BLOB_UPLOAD_KIND
 

@@ -18,7 +18,7 @@ from pathlib import Path, PurePosixPath
 from typing import Any
 from urllib.parse import urlencode
 
-import httpx
+import httpx2
 import huggingface_hub as hf
 from starlette.requests import Request
 from starlette.responses import RedirectResponse
@@ -318,7 +318,7 @@ def oauth_hf_callback(request: Request):
     redirect_uri = _oauth_redirect_uri(request)
     auth_b64 = base64.b64encode(f"{client_id}:{client_secret}".encode()).decode()
     try:
-        with httpx.Client() as client:
+        with httpx2.Client() as client:
             token_resp = client.post(
                 "https://huggingface.co/oauth/token",
                 headers={"Authorization": f"Basic {auth_b64}"},

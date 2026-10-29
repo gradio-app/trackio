@@ -17,7 +17,7 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
-import httpx
+import httpx2
 import huggingface_hub
 from huggingface_hub.errors import (
     BucketNotFoundError,
@@ -176,12 +176,12 @@ def _served_version_info(space_id: str) -> dict:
     if token := huggingface_hub.utils.get_token():
         headers["Authorization"] = f"Bearer {token}"
     try:
-        response = httpx.get(
+        response = httpx2.get(
             _space_id_to_url(space_id) + "version", headers=headers, timeout=30
         )
         response.raise_for_status()
         return response.json()
-    except (httpx.HTTPError, ValueError):
+    except (httpx2.HTTPError, ValueError):
         return {}
 
 

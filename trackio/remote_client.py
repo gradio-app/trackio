@@ -1,18 +1,19 @@
 from __future__ import annotations
 
-import inspect
 from pathlib import Path
 from typing import Any
 from urllib.parse import urljoin, urlparse
 
-import httpx
+import httpx2
 import huggingface_hub
-from gradio_client import Client as GradioClient
 from huggingface_hub.utils import build_hf_headers
 
+from trackio.exceptions import IncompatibleServerError
+from trackio.typehints import FileData
 from trackio.utils import parse_trackio_server_url
 
 HTTP_API_VERSION = 1
+MIN_HTTP_API_TRACKIO_VERSION = "0.24.0"
 FORCE_SYNC_TIMEOUT = 180.0
 
 WRITE_TOKEN_HEADER = "x-trackio-write-token"
@@ -46,6 +47,17 @@ def _resolve_src_url(src: str) -> str:
     )
 
 
+def handle_file(filepath: str | Path) -> FileData:
+    path = Path(filepath)
+    if not path.exists():
+        raise ValueError(f"File {filepath} does not exist on local filesystem.")
+    return {
+        "path": str(filepath),
+        "meta": {"_type": "gradio.FileData"},
+        "orig_name": path.name,
+    }
+
+
 def _is_local_file_data(value: Any) -> bool:
     return (
         isinstance(value, dict)
@@ -68,17 +80,17 @@ def _merge_client_headers(
 
 
 def _request_timeout_for_api(
-    timeout: httpx.Timeout | float | int | None, api_name: str
-) -> httpx.Timeout | float | int | None:
+    timeout: httpx2.Timeout | float | int | None, api_name: str
+) -> httpx2.Timeout | float | int | None:
     if api_name != "force_sync":
         return timeout
 
-    normalized = httpx.Timeout(timeout)
+    normalized = httpx2.Timeout(timeout)
     read_timeout = normalized.read if normalized.read is not None else 0.0
     if read_timeout >= FORCE_SYNC_TIMEOUT:
         return timeout
 
-    return httpx.Timeout(
+    return httpx2.Timeout(
         connect=normalized.connect,
         read=FORCE_SYNC_TIMEOUT,
         write=normalized.write,
@@ -87,9 +99,9 @@ def _request_timeout_for_api(
 
 
 def is_transient_remote_error(exc: BaseException) -> bool:
-    if isinstance(exc, httpx.HTTPStatusError):
+    if isinstance(exc, httpx2.HTTPStatusError):
         return exc.response.status_code >= 500
-    return isinstance(exc, (httpx.RequestError, ConnectionError))
+    return isinstance(exc, (httpx2.RequestError, ConnectionError))
 
 
 class _TrackioHTTPClient:
@@ -112,7 +124,7 @@ class _TrackioHTTPClient:
     def _upload_file(self, file_data: dict[str, Any]) -> dict[str, Any]:
         path = Path(file_data["path"])
         with path.open("rb") as f:
-            resp = httpx.post(
+            resp = httpx2.post(
                 urljoin(self.src, "api/upload"),
                 headers=self.headers,
                 files={"files": (path.name, f)},
@@ -147,7 +159,7 @@ class _TrackioHTTPClient:
         request_kwargs["timeout"] = _request_timeout_for_api(
             request_kwargs.get("timeout"), api_name
         )
-        resp = httpx.post(
+        resp = httpx2.post(
             urljoin(self.src, f"api/{api_name}"),
             headers=self.headers,
             json=payload,
@@ -164,84 +176,49 @@ class _TrackioHTTPClient:
         return body.get("data")
 
 
-class _TrackioGradioCompatClient:
-    def __init__(
-        self,
-        src: str,
-        hf_token: str | None = None,
-        write_token: str | None = None,
-        httpx_kwargs: dict[str, Any] | None = None,
-        verbose: bool = False,
-    ) -> None:
-        supported_params = inspect.signature(GradioClient.__init__).parameters
-        kwargs: dict[str, Any] = {"verbose": verbose}
-        if hf_token:
-            if "hf_token" in supported_params:
-                kwargs["hf_token"] = hf_token
-            elif "token" in supported_params:
-                kwargs["token"] = hf_token
-        merged = dict(httpx_kwargs or {})
-        h = _merge_client_headers(
-            hf_token if hf_token else None,
-            write_token,
-        )
-        extra = merged.pop("headers", None)
-        if isinstance(extra, dict):
-            h.update({str(k): str(v) for k, v in extra.items()})
-        if h:
-            if "headers" in supported_params:
-                kwargs["headers"] = h
-            elif "httpx_kwargs" in supported_params:
-                merged["headers"] = h
-        if merged and "httpx_kwargs" in supported_params:
-            kwargs["httpx_kwargs"] = merged
-        self._client = GradioClient(src, **kwargs)
-
-    def predict(self, *args, api_name: str, **kwargs) -> Any:
-        try:
-            return self._client.predict(*args, api_name=api_name, **kwargs)
-        except Exception as e:
-            if "API Not Found" in str(e) or "api_name" in str(e):
-                raise RuntimeError(
-                    f"Space '{self._client.src}' does not support '{api_name}'. "
-                    "Redeploy with `trackio sync`."
-                ) from e
-            raise
-
-
-def _raise_if_space_is_building(space_id: str) -> None:
-    """
-    GradioClient.__init__ blocks in an unbounded loop while a Space is in the
-    BUILDING stage, which would make the caller unresponsive to trackio's stop
-    flag. Fail fast instead so callers can retry on their own schedule.
-    """
+def _space_is_running(space_id: str) -> bool:
     try:
         info = huggingface_hub.HfApi().space_info(space_id, timeout=30)
-        stage = str(info.runtime.stage) if info.runtime else None
     except Exception:
-        return
-    if stage == "BUILDING":
-        raise ConnectionError(f"Space '{space_id}' is still building.")
+        return False
+    return info.runtime is not None and str(info.runtime.stage) == "RUNNING"
 
 
-def _supports_http_api(
+def _check_http_api(
     src: str,
     hf_token: str | None = None,
     write_token: str | None = None,
     httpx_kwargs: dict[str, Any] | None = None,
-) -> bool:
+) -> None:
+    """Raises `IncompatibleServerError` if `src` is a running Trackio server
+    that predates the HTTP API (Trackio < 0.24.0), and `ConnectionError` if it
+    cannot be reached yet."""
     url = _resolve_src_url(src)
     headers = _merge_client_headers(hf_token, write_token)
     kwargs = dict(httpx_kwargs or {})
     kwargs.setdefault("timeout", 10)
+    resp = httpx2.get(urljoin(url, "version"), headers=headers, **kwargs)
+    if resp.status_code >= 500 or resp.status_code in (401, 403):
+        resp.raise_for_status()
     try:
-        resp = httpx.get(urljoin(url, "version"), headers=headers, **kwargs)
-        if not resp.is_success:
-            return False
-        data = resp.json()
-        return data.get("api_version") == HTTP_API_VERSION
-    except Exception:
-        return False
+        api_version = resp.json().get("api_version") if resp.is_success else None
+    except ValueError:
+        api_version = None
+    if api_version == HTTP_API_VERSION:
+        return
+    is_space = not src.startswith(("http://", "https://"))
+    if is_space and not _space_is_running(src):
+        raise ConnectionError(f"Space '{src}' is not running yet.")
+    upgrade = (
+        f"Upgrade the Space with `trackio bump {src}`."
+        if is_space
+        else "Upgrade Trackio on that server."
+    )
+    raise IncompatibleServerError(
+        f"'{src}' is running a Trackio version older than "
+        f"{MIN_HTTP_API_TRACKIO_VERSION}, which this version of Trackio can no "
+        f"longer log to. {upgrade}"
+    )
 
 
 class RemoteClient:
@@ -265,29 +242,19 @@ class RemoteClient:
             if not _host_is_hf_space(_normalize_src(base)):
                 hf_effective = None
         try:
-            if _supports_http_api(
+            _check_http_api(
                 src_for_resolve,
                 hf_token=hf_effective,
                 write_token=wt_effective,
                 httpx_kwargs=httpx_kwargs,
-            ):
-                self._client = _TrackioHTTPClient(
-                    src_for_resolve,
-                    hf_token=hf_effective,
-                    write_token=wt_effective,
-                    httpx_kwargs=httpx_kwargs,
-                )
-            else:
-                if not src_for_resolve.startswith(("http://", "https://")):
-                    _raise_if_space_is_building(src_for_resolve)
-                self._client = _TrackioGradioCompatClient(
-                    src_for_resolve,
-                    hf_token=hf_effective,
-                    write_token=wt_effective,
-                    httpx_kwargs=httpx_kwargs,
-                    verbose=verbose,
-                )
-        except ValueError:
+            )
+            self._client = _TrackioHTTPClient(
+                src_for_resolve,
+                hf_token=hf_effective,
+                write_token=wt_effective,
+                httpx_kwargs=httpx_kwargs,
+            )
+        except (ValueError, IncompatibleServerError):
             raise
         except Exception as e:
             raise ConnectionError(
