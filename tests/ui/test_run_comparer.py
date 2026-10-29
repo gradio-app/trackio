@@ -34,7 +34,6 @@ def test_run_comparer_diff_and_search(temp_dir):
             page = browser.new_page()
             page.set_default_timeout(5000)
             page.goto(full_url)
-            page.wait_for_load_state("networkidle")
 
             toggle = page.locator(
                 "label.checkbox-container", has_text="Show run comparer"
