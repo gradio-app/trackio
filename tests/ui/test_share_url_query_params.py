@@ -62,15 +62,14 @@ def test_share_view_query_params_apply(temp_dir):
                 },
             )
             page.goto(primary)
-            page.wait_for_load_state("networkidle")
-
-            expect(page.locator(".navbar")).to_have_count(0)
-            expect(page.locator(".sidebar")).to_have_count(0)
-            expect(page.locator(".accordion")).to_have_count(0)
 
             expect(page.locator(".metrics-page")).to_be_visible()
             expect(page.locator(".vega-embed")).to_have_count(1)
             expect(page.locator(".metrics-page .legend-dot")).to_have_count(1)
+
+            expect(page.locator(".navbar")).to_have_count(0)
+            expect(page.locator(".sidebar")).to_have_count(0)
+            expect(page.locator(".accordion")).to_have_count(0)
 
             duplicate = _url_with_query(
                 full_url,
@@ -84,7 +83,6 @@ def test_share_view_query_params_apply(temp_dir):
                 },
             )
             page.goto(duplicate)
-            page.wait_for_load_state("networkidle")
 
             expect(page.locator(".metrics-page")).to_be_visible()
             expect(page.locator(".vega-embed")).to_have_count(1)
@@ -102,11 +100,10 @@ def test_share_view_query_params_apply(temp_dir):
                 },
             )
             page.goto(legacy)
-            page.wait_for_load_state("networkidle")
 
-            expect(page.locator(".navbar")).to_have_count(0)
             expect(page.locator(".vega-embed")).to_have_count(1)
             expect(page.locator(".metrics-page .legend-dot")).to_have_count(1)
+            expect(page.locator(".navbar")).to_have_count(0)
 
             plots_per_row = _url_with_query(
                 full_url,
@@ -116,7 +113,6 @@ def test_share_view_query_params_apply(temp_dir):
                 },
             )
             page.goto(plots_per_row)
-            page.wait_for_load_state("networkidle")
 
             expect(page.get_by_label("Plots per row")).to_have_value("2")
             plot_grid = page.locator(".plot-grid").first
@@ -138,7 +134,6 @@ def test_share_view_query_params_apply(temp_dir):
                 },
             )
             page.goto(auto_plots)
-            page.wait_for_load_state("networkidle")
 
             auto_grid = page.locator(".plot-grid.auto").first
             expect(auto_grid).to_be_visible()
@@ -164,7 +159,6 @@ def test_share_view_query_params_apply(temp_dir):
                 },
             )
             page.goto(auto_sidebar)
-            page.wait_for_load_state("networkidle")
 
             expect(page.locator(".sidebar-shell")).to_have_class(
                 re.compile(r"\bcollapsed\b")
@@ -200,8 +194,8 @@ def test_share_view_query_params_apply(temp_dir):
                 },
             )
             page.goto(visible_sidebar)
-            page.wait_for_load_state("networkidle")
 
+            expect(page.locator(".sidebar-shell")).to_have_count(1)
             expect(page.locator(".sidebar-shell")).not_to_have_class(
                 re.compile(r"\bcollapsed\b")
             )
