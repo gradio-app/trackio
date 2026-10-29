@@ -4,6 +4,8 @@ import json
 import logging
 import os
 import shutil
+import signal
+import threading
 import warnings
 import webbrowser
 from pathlib import Path
@@ -142,6 +144,24 @@ def _cleanup_current_run():
             run.finish()
         except Exception:
             pass
+
+
+def _handle_sigterm(signum, frame):
+    raise SystemExit(128 + signum)
+
+
+def _install_sigterm_handler():
+    """Turns SIGTERM (Slurm time limits, `docker stop`, Kubernetes evictions)
+    into a normal interpreter exit so the atexit cleanup still finishes the run
+    and saves buffered logs and console output. A handler that the user or a
+    framework already installed is left untouched."""
+    if threading.current_thread() is not threading.main_thread():
+        return
+    try:
+        if signal.getsignal(signal.SIGTERM) is signal.SIG_DFL:
+            signal.signal(signal.SIGTERM, _handle_sigterm)
+    except (ValueError, OSError):
+        pass
 
 
 def _safe_get_runs_for_init(
@@ -697,6 +717,7 @@ def init(
     if not _atexit_registered:
         atexit.register(_cleanup_current_run)
         _atexit_registered = True
+    _install_sigterm_handler()
 
     if resumed:
         print(f"* Resumed existing run: {run.name}")

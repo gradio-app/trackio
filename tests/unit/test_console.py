@@ -1,7 +1,13 @@
 import io
 import logging
+import os
+import signal
+import subprocess
 import sys
+import textwrap
 from pathlib import Path
+
+import pytest
 
 import trackio
 from trackio.console import REDACTED, redact_argv
@@ -158,3 +164,47 @@ def test_console_stop_preserves_partial_after_rollover(temp_dir, monkeypatch):
         "x" * 100,
         "final partial line",
     ]
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="SIGTERM cannot be handled")
+def test_sigterm_saves_console_output_and_buffered_logs(temp_dir):
+    script = textwrap.dedent(
+        """
+        import os, signal, time
+        import trackio
+        trackio.init(project="sigterm", name="killed", capture_console=True,
+                     auto_log_cpu=False)
+        for step in range(5):
+            trackio.log({"step_value": step})
+            print(f"line {step}", flush=True)
+        os.kill(os.getpid(), signal.SIGTERM)
+        time.sleep(30)
+        """
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", script],
+        env={**os.environ, "TRACKIO_DIR": str(temp_dir)},
+        capture_output=True,
+        timeout=60,
+    )
+
+    assert result.returncode == 128 + signal.SIGTERM
+    lines = _lines(get_console_output("sigterm", "killed")["text"])
+    assert lines[-1] == "line 4"
+    logs = SQLiteStorage.get_logs("sigterm", "killed")
+    assert [log["step_value"] for log in logs] == [0, 1, 2, 3, 4]
+
+
+def test_sigterm_handler_does_not_replace_existing_handler():
+    def existing(signum, frame):
+        pass
+
+    previous = signal.signal(signal.SIGTERM, existing)
+    try:
+        trackio._install_sigterm_handler()
+        assert signal.getsignal(signal.SIGTERM) is existing
+        signal.signal(signal.SIGTERM, signal.SIG_DFL)
+        trackio._install_sigterm_handler()
+        assert signal.getsignal(signal.SIGTERM) is trackio._handle_sigterm
+    finally:
+        signal.signal(signal.SIGTERM, previous)
