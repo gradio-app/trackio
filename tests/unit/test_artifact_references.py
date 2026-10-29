@@ -2,7 +2,7 @@ import hashlib
 from pathlib import Path
 from urllib.parse import quote, unquote, urlsplit
 
-import httpx
+import httpx2
 import pytest
 from starlette.testclient import TestClient
 
@@ -311,7 +311,7 @@ def test_add_reference_directory_respects_max_objects(temp_dir, tmp_path):
 
 def test_add_reference_http_probes_size_and_digest(temp_dir, monkeypatch):
     monkeypatch.setattr(
-        references.httpx,
+        references.httpx2,
         "head",
         lambda *a, **k: _Resp({"content-length": "2048", "etag": '"abc123"'}),
     )
@@ -329,9 +329,9 @@ def test_add_reference_http_probes_size_and_digest(temp_dir, monkeypatch):
 
 def test_add_reference_http_unreachable_records_uri_only(temp_dir, monkeypatch):
     def _boom(*a, **k):
-        raise httpx.ConnectError("offline")
+        raise httpx2.ConnectError("offline")
 
-    monkeypatch.setattr(references.httpx, "head", _boom)
+    monkeypatch.setattr(references.httpx2, "head", _boom)
     trackio.init(project="ref-http-down")
     art = trackio.Artifact(name="ds", type="dataset")
     with pytest.warns(UserWarning, match="without a content checksum"):
@@ -368,12 +368,12 @@ def test_add_reference_unsigned_url_does_not_warn(recwarn):
 
 def test_download_fetches_http_reference(temp_dir, tmp_path, monkeypatch):
     monkeypatch.setattr(
-        references.httpx,
+        references.httpx2,
         "head",
         lambda *a, **k: _Resp({"content-length": "5", "etag": '"h"'}),
     )
     monkeypatch.setattr(
-        references.httpx,
+        references.httpx2,
         "stream",
         lambda *a, **k: _Resp(body=b"hello"),
     )
@@ -584,12 +584,12 @@ def test_reference_and_file_path_collision_is_rejected(temp_dir, tmp_path):
 
 def test_mixed_file_and_reference_round_trip(temp_dir, tmp_path, monkeypatch):
     monkeypatch.setattr(
-        references.httpx,
+        references.httpx2,
         "head",
         lambda *a, **k: _Resp({"content-length": "5", "etag": '"h"'}),
     )
     monkeypatch.setattr(
-        references.httpx, "stream", lambda *a, **k: _Resp(body=b"hello")
+        references.httpx2, "stream", lambda *a, **k: _Resp(body=b"hello")
     )
     weights = tmp_path / "weights.bin"
     weights.write_bytes(b"\x01\x02\x03weights")
@@ -653,7 +653,7 @@ def test_identical_reference_manifests_dedupe_to_one_version(temp_dir):
 def test_changing_reference_uri_or_digest_creates_new_version(temp_dir, monkeypatch):
     etag = {"value": "e1"}
     monkeypatch.setattr(
-        references.httpx,
+        references.httpx2,
         "head",
         lambda *a, **k: _Resp({"content-length": "100", "etag": f'"{etag["value"]}"'}),
     )

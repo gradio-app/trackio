@@ -66,6 +66,7 @@ from trackio.typehints import UploadEntry
 from trackio.utils import TRACKIO_DIR, TRACKIO_LOGO_DIR, _emit_nonfatal_warning
 
 logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("httpx2").setLevel(logging.WARNING)
 
 __version__ = json.loads(Path(__file__).parent.joinpath("package.json").read_text())[
     "version"

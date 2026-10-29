@@ -6,7 +6,7 @@ import warnings
 from pathlib import Path
 from urllib.parse import urlparse, urlunparse
 
-import httpx
+import httpx2
 
 from trackio._vendor.gradio_exceptions import ShareCertificateWriteError
 from trackio._vendor.tunneling import CERTIFICATE_PATH, Tunnel
@@ -29,7 +29,7 @@ def setup_tunnel(
     )
     if share_server_address is None:
         try:
-            response = httpx.get(GRADIO_API_SERVER, timeout=30)
+            response = httpx2.get(GRADIO_API_SERVER, timeout=30)
             payload = response.json()[0]
             remote_host, remote_port = payload["host"], int(payload["port"])
             certificate = payload["root_ca"]
@@ -67,11 +67,11 @@ def url_ok(url: str) -> bool:
         for _ in range(5):
             with warnings.catch_warnings():
                 warnings.filterwarnings("ignore")
-                r = httpx.head(url, timeout=3, verify=False)
+                r = httpx2.head(url, timeout=3, verify=False)
             if r.status_code in (200, 401, 302, 303, 307):
                 return True
             time.sleep(0.500)
-    except (ConnectionError, httpx.ConnectError, httpx.TimeoutException):
+    except (ConnectionError, httpx2.ConnectError, httpx2.TimeoutException):
         return False
     return False
 

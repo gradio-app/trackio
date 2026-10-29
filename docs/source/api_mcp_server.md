@@ -40,20 +40,20 @@ Trackio exposes each MCP tool as a plain HTTP endpoint at `POST /api/{tool_name}
 <hfoption id="Python">
 
 ```python
-import httpx
+import httpx2
 
 base = "http://127.0.0.1:7860"
 
-projects = httpx.post(f"{base}/api/get_all_projects").json()["data"]
+projects = httpx2.post(f"{base}/api/get_all_projects").json()["data"]
 print("Projects:", projects)
 
-runs = httpx.post(
+runs = httpx2.post(
     f"{base}/api/get_runs_for_project",
     json={"project": "my-project"},
 ).json()["data"]
 print("Runs:", runs)
 
-values = httpx.post(
+values = httpx2.post(
     f"{base}/api/get_metric_values",
     json={"project": "my-project", "run": "run-1", "metric_name": "loss"},
 ).json()["data"]

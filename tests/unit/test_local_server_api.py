@@ -6,7 +6,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from urllib.parse import parse_qs, urlparse
 
-import httpx
+import httpx2
 import pytest
 
 import trackio
@@ -114,7 +114,7 @@ def test_local_dashboard_registry_read_api(temp_dir):
 
     try:
         assert urlparse(full_url).path == "/registry"
-        assert httpx.get(f"{url.rstrip('/')}/registry", timeout=5).status_code == 200
+        assert httpx2.get(f"{url.rstrip('/')}/registry", timeout=5).status_code == 200
         client = Client(url, verbose=False)
         registries = client.predict(api_name="/get_registries")
         details = client.predict("models", api_name="/get_registry_details")
@@ -148,14 +148,14 @@ def test_registry_bucket_picker_only_uses_saved_token_with_write_access(
     app, url, _, full_url = trackio.show(block_thread=False, open_browser=False)
 
     try:
-        public_response = httpx.post(
+        public_response = httpx2.post(
             f"{url.rstrip('/')}/api/get_registry_buckets", json={}, timeout=5
         )
         assert public_response.json()["data"]["buckets"] == []
         assert calls == []
 
         write_token = parse_qs(urlparse(full_url).query)["write_token"][0]
-        trusted_response = httpx.post(
+        trusted_response = httpx2.post(
             f"{url.rstrip('/')}/api/get_registry_buckets",
             json={},
             headers={"x-trackio-write-token": write_token},
@@ -192,7 +192,7 @@ def test_registry_bucket_picker_does_not_block_other_api_requests(
 
         with ThreadPoolExecutor(max_workers=2) as executor:
             bucket_request = executor.submit(
-                httpx.post,
+                httpx2.post,
                 f"{url.rstrip('/')}/api/get_registry_buckets",
                 json={},
                 headers=headers,
@@ -200,7 +200,7 @@ def test_registry_bucket_picker_does_not_block_other_api_requests(
             )
             assert entered.wait(timeout=2)
             registry_request = executor.submit(
-                httpx.post,
+                httpx2.post,
                 f"{url.rstrip('/')}/api/get_registries",
                 json={},
                 timeout=10,
@@ -296,7 +296,7 @@ def test_local_dashboard_returns_400_for_missing_required_parameter(temp_dir):
     app, url, _, _ = trackio.show(block_thread=False, open_browser=False)
 
     try:
-        response = httpx.post(
+        response = httpx2.post(
             f"{url.rstrip('/')}/api/get_runs_for_project",
             json={},
             timeout=5,
@@ -322,8 +322,8 @@ def test_local_dashboard_injects_live_reload_for_custom_frontend(temp_dir):
     )
 
     try:
-        response = httpx.get(url, timeout=5)
-        version_response = httpx.get(
+        response = httpx2.get(url, timeout=5)
+        version_response = httpx2.get(
             f"{url.rstrip('/')}/__trackio/frontend_version",
             timeout=5,
         )
@@ -353,12 +353,12 @@ def test_local_dashboard_file_endpoint_only_serves_trackio_paths(
     app, url, _, _ = trackio.show(block_thread=False, open_browser=False)
 
     try:
-        allowed_response = httpx.get(
+        allowed_response = httpx2.get(
             f"{url.rstrip('/')}/file",
             params={"path": str(allowed_path)},
             timeout=5,
         )
-        blocked_response = httpx.get(
+        blocked_response = httpx2.get(
             f"{url.rstrip('/')}/file",
             params={"path": "/etc/hosts"},
             timeout=5,
@@ -385,7 +385,7 @@ def test_local_dashboard_upload_api_accepts_only_server_uploaded_paths(temp_dir)
     write_headers = {"x-trackio-write-token": write_token}
 
     try:
-        blocked_upload_response = httpx.post(
+        blocked_upload_response = httpx2.post(
             f"{url.rstrip('/')}/api/upload",
             files={"files": (source_path.name, source_text.encode())},
             timeout=5,
@@ -396,7 +396,7 @@ def test_local_dashboard_upload_api_accepts_only_server_uploaded_paths(temp_dir)
         }
 
         with source_path.open("rb") as handle:
-            upload_response = httpx.post(
+            upload_response = httpx2.post(
                 f"{url.rstrip('/')}/api/upload",
                 headers=write_headers,
                 files={"files": (source_path.name, handle)},
@@ -412,7 +412,7 @@ def test_local_dashboard_upload_api_accepts_only_server_uploaded_paths(temp_dir)
             / Path(uploaded_path).name
         )
 
-        allowed_response = httpx.post(
+        allowed_response = httpx2.post(
             f"{url.rstrip('/')}/api/bulk_upload_media",
             headers=write_headers,
             json={
@@ -429,7 +429,7 @@ def test_local_dashboard_upload_api_accepts_only_server_uploaded_paths(temp_dir)
             },
             timeout=5,
         )
-        blocked_response = httpx.post(
+        blocked_response = httpx2.post(
             f"{url.rstrip('/')}/api/bulk_upload_media",
             headers=write_headers,
             json={
@@ -483,7 +483,7 @@ def test_local_dashboard_run_media_upload_preserves_media_basename(
 
     try:
         with source_path.open("rb") as handle:
-            upload_response = httpx.post(
+            upload_response = httpx2.post(
                 f"{url.rstrip('/')}/api/upload",
                 headers=write_headers,
                 files={"files": (source_path.name, handle)},
@@ -496,7 +496,7 @@ def test_local_dashboard_run_media_upload_preserves_media_basename(
         )
         temp_name_target = target.parent / Path(uploaded_path).name
 
-        response = httpx.post(
+        response = httpx2.post(
             f"{url.rstrip('/')}/api/bulk_upload_media",
             headers=write_headers,
             json={
@@ -674,7 +674,7 @@ def test_paused_writes_are_rejected_as_unavailable_while_reads_work(
     app, url, _, _ = trackio.show(block_thread=False, open_browser=False)
     base = url.rstrip("/")
     try:
-        response = httpx.post(
+        response = httpx2.post(
             f"{base}/api/bulk_log",
             json={
                 "logs": [{"project": "p", "run": "r", "metrics": {"loss": 1.0}}],
@@ -684,10 +684,10 @@ def test_paused_writes_are_rejected_as_unavailable_while_reads_work(
             timeout=5,
         )
         assert response.status_code == 503
-        assert httpx.post(
+        assert httpx2.post(
             f"{base}/api/get_all_projects", json={}, timeout=5
         ).json() == {"data": []}
-        assert httpx.get(f"{base}/version", timeout=5).json()["writes_paused"] is True
+        assert httpx2.get(f"{base}/version", timeout=5).json()["writes_paused"] is True
         assert SQLiteStorage.get_projects() == []
     finally:
         app.close()

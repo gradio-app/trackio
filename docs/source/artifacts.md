@@ -139,7 +139,7 @@ A reference's version identity comes from its URI, size, and `digest`, so re-log
 
 URIs are recorded verbatim, and manifests can be synced to a Hugging Face Dataset. A URI that embeds a credential — a presigned `https://` URL or an Azure SAS token — would expose that credential to anyone who can read the Dataset, so `add_reference` warns when a URI's query string looks signed; prefer the object's canonical unsigned URI (e.g. `s3://bucket/key`).
 
-Reference bytes are never uploaded to a Space or bucket, but they can be fetched on demand. `download()` downloads each referenced object into the directory (via `httpx`, `huggingface_hub`, or your registered handler), which can transfer a large amount of data. Before fetching, each object's source is re-probed and its current checksum compared against the recorded one — a mismatch warns that the source may have changed but the download proceeds. Each object is written atomically, and one already present on disk is skipped without re-checking the source, so repeated calls are cheap and idempotent:
+Reference bytes are never uploaded to a Space or bucket, but they can be fetched on demand. `download()` downloads each referenced object into the directory (via `httpx2`, `huggingface_hub`, or your registered handler), which can transfer a large amount of data. Before fetching, each object's source is re-probed and its current checksum compared against the recorded one — a mismatch warns that the source may have changed but the download proceeds. Each object is written atomically, and one already present on disk is skipped without re-checking the source, so repeated calls are cheap and idempotent:
 
 ```python
 artifact = trackio.use_artifact("training-set:latest")

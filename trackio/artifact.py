@@ -2,7 +2,7 @@ import os
 import shutil
 from pathlib import Path
 
-import httpx
+import httpx2
 from huggingface_hub.utils import get_token
 
 from trackio import cas, references, utils
@@ -54,11 +54,11 @@ def _fetch_blob_from_remote(
         get_token() if space_id else None,
         remote_source.get("write_token"),
     )
-    with httpx.stream(
+    with httpx2.stream(
         "GET",
         url,
         headers=headers,
-        timeout=httpx.Timeout(connect=10.0, read=300.0, write=10.0, pool=10.0),
+        timeout=httpx2.Timeout(connect=10.0, read=300.0, write=10.0, pool=10.0),
     ) as response:
         if response.status_code == 404:
             raise FileNotFoundError(
@@ -503,7 +503,7 @@ class Artifact:
 
         Reference entries added via `add_reference` are fetched here too: the
         object at each reference URI is downloaded into the directory (via the
-        bundled `httpx` for `http(s)://`, `huggingface_hub` for `hf://`, and
+        bundled `httpx2` for `http(s)://`, `huggingface_hub` for `hf://`, and
         the registered custom `ReferenceHandler` for any other scheme). Each
         object is written atomically and calls are idempotent. Because reference digests
         are opaque (a provider ETag or the URI itself), a present file is assumed

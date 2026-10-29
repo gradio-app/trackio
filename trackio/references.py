@@ -30,7 +30,7 @@ from typing import NamedTuple
 from urllib.parse import parse_qsl, quote, unquote, urlsplit
 from urllib.request import url2pathname
 
-import httpx
+import httpx2
 
 from trackio import cas
 from trackio.typehints import ETag, Sha256Digest
@@ -389,9 +389,9 @@ def _http_resolve(uri: str, checksum: bool) -> list[ResolvedReference]:
     if not checksum:
         return [ResolvedReference(None, uri)]
     try:
-        response = httpx.head(uri, follow_redirects=True, timeout=httpx.Timeout(10.0))
+        response = httpx2.head(uri, follow_redirects=True, timeout=httpx2.Timeout(10.0))
         response.raise_for_status()
-    except httpx.HTTPError:
+    except httpx2.HTTPError:
         return [ResolvedReference(None, uri)]
     return [
         ResolvedReference(
@@ -405,11 +405,11 @@ def _http_resolve(uri: str, checksum: bool) -> list[ResolvedReference]:
 
 def _http_fetch(uri: str, dest: Path) -> None:
     """Stream an HTTP(S) URL's body into `dest`."""
-    with httpx.stream(
+    with httpx2.stream(
         "GET",
         uri,
         follow_redirects=True,
-        timeout=httpx.Timeout(connect=10.0, read=300.0, write=10.0, pool=10.0),
+        timeout=httpx2.Timeout(connect=10.0, read=300.0, write=10.0, pool=10.0),
     ) as response:
         response.raise_for_status()
         _write_chunks(response.iter_bytes(), dest)

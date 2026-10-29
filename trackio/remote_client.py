@@ -5,12 +5,17 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urljoin, urlparse
 
-import httpx
+import httpx2
 import huggingface_hub
 from gradio_client import Client as GradioClient
 from huggingface_hub.utils import build_hf_headers
 
 from trackio.utils import parse_trackio_server_url
+
+try:
+    from gradio_client.utils import httpx as gradio_client_httpx
+except ImportError:
+    import httpx2 as gradio_client_httpx
 
 HTTP_API_VERSION = 1
 FORCE_SYNC_TIMEOUT = 180.0
@@ -68,17 +73,17 @@ def _merge_client_headers(
 
 
 def _request_timeout_for_api(
-    timeout: httpx.Timeout | float | int | None, api_name: str
-) -> httpx.Timeout | float | int | None:
+    timeout: httpx2.Timeout | float | int | None, api_name: str
+) -> httpx2.Timeout | float | int | None:
     if api_name != "force_sync":
         return timeout
 
-    normalized = httpx.Timeout(timeout)
+    normalized = httpx2.Timeout(timeout)
     read_timeout = normalized.read if normalized.read is not None else 0.0
     if read_timeout >= FORCE_SYNC_TIMEOUT:
         return timeout
 
-    return httpx.Timeout(
+    return httpx2.Timeout(
         connect=normalized.connect,
         read=FORCE_SYNC_TIMEOUT,
         write=normalized.write,
@@ -87,9 +92,11 @@ def _request_timeout_for_api(
 
 
 def is_transient_remote_error(exc: BaseException) -> bool:
-    if isinstance(exc, httpx.HTTPStatusError):
+    if isinstance(exc, (httpx2.HTTPStatusError, gradio_client_httpx.HTTPStatusError)):
         return exc.response.status_code >= 500
-    return isinstance(exc, (httpx.RequestError, ConnectionError))
+    return isinstance(
+        exc, (httpx2.RequestError, gradio_client_httpx.RequestError, ConnectionError)
+    )
 
 
 class _TrackioHTTPClient:
@@ -112,7 +119,7 @@ class _TrackioHTTPClient:
     def _upload_file(self, file_data: dict[str, Any]) -> dict[str, Any]:
         path = Path(file_data["path"])
         with path.open("rb") as f:
-            resp = httpx.post(
+            resp = httpx2.post(
                 urljoin(self.src, "api/upload"),
                 headers=self.headers,
                 files={"files": (path.name, f)},
@@ -147,7 +154,7 @@ class _TrackioHTTPClient:
         request_kwargs["timeout"] = _request_timeout_for_api(
             request_kwargs.get("timeout"), api_name
         )
-        resp = httpx.post(
+        resp = httpx2.post(
             urljoin(self.src, f"api/{api_name}"),
             headers=self.headers,
             json=payload,
@@ -235,7 +242,7 @@ def _supports_http_api(
     kwargs = dict(httpx_kwargs or {})
     kwargs.setdefault("timeout", 10)
     try:
-        resp = httpx.get(urljoin(url, "version"), headers=headers, **kwargs)
+        resp = httpx2.get(urljoin(url, "version"), headers=headers, **kwargs)
         if not resp.is_success:
             return False
         data = resp.json()
