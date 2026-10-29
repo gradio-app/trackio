@@ -159,8 +159,6 @@ def _install_sigterm_handler():
     if os.environ.get("TRACKIO_HANDLE_SIGTERM", "").strip().lower() not in (
         "1",
         "true",
-        "yes",
-        "on",
     ):
         return
     if threading.current_thread() is not threading.main_thread():
