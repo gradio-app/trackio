@@ -757,6 +757,7 @@
           {spaceId}
           selectedProject={selectedProject}
           {projects}
+          writeAccess={mutationStatus}
           onWriteTokenSaved={refreshMutationAccess}
         />
       {/if}

@@ -2,6 +2,7 @@
 
 import asyncio
 import base64
+import hashlib
 import logging
 import os
 import re
@@ -434,21 +435,62 @@ def check_oauth_token_has_write_access(oauth_token: str | None) -> None:
     )
 
 
-def check_write_access(request: Request, token: str) -> bool:
-    expected_token = token or ""
+_WRITE_TOKEN_MAX_FAILURES = 10
+_WRITE_TOKEN_FAILURE_WINDOW = 60.0
+_write_token_failures: dict[Any, deque[float]] = {}
+_write_token_failures_lock = threading.Lock()
+
+
+def _provided_write_token(request: Request) -> str | None:
     hdr = request.headers.get("x-trackio-write-token")
     if hdr is not None:
-        return secrets.compare_digest(hdr, expected_token)
+        return hdr
     cookies = request.headers.get("cookie", "")
     if cookies:
         for cookie in cookies.split(";"):
             parts = cookie.strip().split("=", 1)
             if len(parts) == 2 and parts[0] == "trackio_write_token":
-                return secrets.compare_digest(parts[1], expected_token)
+                return parts[1]
     if hasattr(request, "query_params") and request.query_params:
-        qp = request.query_params.get("write_token")
-        return secrets.compare_digest(qp or "", expected_token)
-    return False
+        return request.query_params.get("write_token")
+    return None
+
+
+def _write_token_locked_out(client: Any, now: float) -> bool:
+    failures = _write_token_failures.get(client)
+    if failures is None:
+        return False
+    while failures and now - failures[0] > _WRITE_TOKEN_FAILURE_WINDOW:
+        failures.popleft()
+    if not failures:
+        del _write_token_failures[client]
+        return False
+    return len(failures) >= _WRITE_TOKEN_MAX_FAILURES
+
+
+def check_write_access(request: Request, token: str) -> bool:
+    """
+    Checks a write token from the request against the server's token. Tokens are
+    compared as SHA-256 digests in constant time, so neither the content nor the
+    length of the expected token leaks through timing. A client with too many
+    wrong tokens in the last minute is refused, even with the right token, until
+    its failures age out.
+    """
+    provided = _provided_write_token(request)
+    if not provided:
+        return False
+    client = getattr(getattr(request, "client", None), "host", None)
+    now = time.monotonic()
+    with _write_token_failures_lock:
+        if _write_token_locked_out(client, now):
+            return False
+        if secrets.compare_digest(
+            hashlib.sha256(provided.encode()).digest(),
+            hashlib.sha256((token or "").encode()).digest(),
+        ):
+            return True
+        _write_token_failures.setdefault(client, deque()).append(now)
+        return False
 
 
 def assert_can_write_metrics(request: Request, hf_token: str | None) -> None:

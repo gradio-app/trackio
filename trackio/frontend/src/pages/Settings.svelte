@@ -10,12 +10,19 @@
     spaceId = null,
     selectedProject = null,
     projects = [],
-    onWriteTokenSaved = () => {},
+    writeAccess = { allowed: false, auth: "none" },
+    onWriteTokenSaved = async () => {},
   } = $props();
 
   let themeChoice = $state(getThemePreference());
   let writeToken = $state(getSavedWriteToken());
-  let writeTokenSaved = $state(false);
+  let savedWriteToken = $state(getSavedWriteToken());
+  let checkingWriteToken = $state(false);
+
+  let writeTokenStatus = $derived.by(() => {
+    if (!savedWriteToken || checkingWriteToken || writeAccess.auth === "oauth") return null;
+    return writeAccess.allowed ? "accepted" : "rejected";
+  });
   let copiedIdx = $state(null);
   let cliProject = $state(null);
   let selectedAgent = $state("claude");
@@ -61,13 +68,17 @@
     setThemePreference(value);
   }
 
-  function submitWriteToken(event) {
+  async function submitWriteToken(event) {
     event.preventDefault();
     writeToken = writeToken.trim();
     saveWriteToken(writeToken);
-    onWriteTokenSaved();
-    writeTokenSaved = true;
-    setTimeout(() => { writeTokenSaved = false; }, 1500);
+    savedWriteToken = writeToken;
+    checkingWriteToken = true;
+    try {
+      await onWriteTokenSaved();
+    } finally {
+      checkingWriteToken = false;
+    }
   }
 
   function spaceFlag() {
@@ -173,8 +184,22 @@
             autocomplete="off"
             aria-label="Write token"
           />
-          <button class="token-save" type="submit">{writeTokenSaved ? "Saved" : "Save"}</button>
+          <button class="token-save" type="submit" disabled={checkingWriteToken}>Save</button>
         </form>
+        {#if checkingWriteToken}
+          <p class="token-status" role="status">Checking token…</p>
+        {:else if writeTokenStatus === "accepted"}
+          <p class="token-status accepted" role="status">
+            <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M3.5 8.5l3 3 6-7" />
+            </svg>
+            Token accepted. This browser can rename and delete runs.
+          </p>
+        {:else if writeTokenStatus === "rejected"}
+          <p class="token-status rejected" role="status">
+            Token not accepted. Check that it matches the server's write token. After several wrong attempts, wait a minute before trying again.
+          </p>
+        {/if}
       </section>
 
       <section class="settings-section">
@@ -406,6 +431,21 @@
     border-color: var(--color-accent, #f97316);
   }
 
+  .token-status {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin: 8px 0 0;
+    font-size: var(--text-sm, 12px);
+    color: var(--body-text-color-subdued, #6b7280);
+  }
+  .token-status.accepted svg {
+    color: var(--color-accent, #f97316);
+    flex-shrink: 0;
+  }
+  .token-status.rejected {
+    color: var(--error-text-color, #b91c1c);
+  }
   .token-form {
     display: flex;
     gap: 8px;
