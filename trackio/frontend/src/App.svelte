@@ -753,7 +753,13 @@
           onOpenVersion={openArtifactVersion}
         />
       {:else if currentPage === "settings"}
-        <Settings {spaceId} selectedProject={selectedProject} {projects} />
+        <Settings
+          {spaceId}
+          selectedProject={selectedProject}
+          {projects}
+          writeAccess={mutationStatus}
+          onWriteTokenSaved={refreshMutationAccess}
+        />
       {/if}
     </div>
   </div>
