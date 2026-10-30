@@ -1,5 +1,13 @@
 # trackio
 
+## 0.45.0
+
+### Features
+
+- [#742](https://github.com/gradio-app/trackio/pull/742) [`d101584`](https://github.com/gradio-app/trackio/commit/d101584ae555b1f29e9fcecc2afc5aac589968ec) - Migrate from httpx to httpx2 and drop gradio_client.  Thanks @abidlabs!
+- [#741](https://github.com/gradio-app/trackio/pull/741) [`c7d6ea9`](https://github.com/gradio-app/trackio/commit/c7d6ea9140fa9e32e35332f058397759e41c689c) - Add TRACKIO_HANDLE_SIGTERM to save logs when a run receives SIGTERM.  Thanks @abidlabs!
+- [#745](https://github.com/gradio-app/trackio/pull/745) [`189c946`](https://github.com/gradio-app/trackio/commit/189c9460a3709cacd1ac94dfd1ff3359f7ae7d01) - Keep finite samples audible when audio arrays contain inf or nan.  Thanks @abidlabs!
+
 ## 0.44.0
 
 ### Features
