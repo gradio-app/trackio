@@ -6,7 +6,12 @@
   } from "../lib/theme.js";
   import { getSavedWriteToken, saveWriteToken } from "../lib/urlTokens.js";
 
-  let { spaceId = null, selectedProject = null, projects = [] } = $props();
+  let {
+    spaceId = null,
+    selectedProject = null,
+    projects = [],
+    onWriteTokenSaved = () => {},
+  } = $props();
 
   let themeChoice = $state(getThemePreference());
   let writeToken = $state(getSavedWriteToken());
@@ -60,6 +65,7 @@
     event.preventDefault();
     writeToken = writeToken.trim();
     saveWriteToken(writeToken);
+    onWriteTokenSaved();
     writeTokenSaved = true;
     setTimeout(() => { writeTokenSaved = false; }, 1500);
   }

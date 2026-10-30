@@ -14,6 +14,11 @@ export function getSavedWriteToken() {
   }
 }
 
+export function getWriteTokenHeader() {
+  const token = getSavedWriteToken();
+  return token ? { "x-trackio-write-token": token } : {};
+}
+
 export function saveWriteToken(token) {
   try {
     if (token) localStorage.setItem(WRITE_TOKEN_KEY, token);

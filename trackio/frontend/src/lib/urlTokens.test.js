@@ -1,5 +1,10 @@
 import { afterEach, describe, expect, test } from "vitest";
-import { applyUrlTokens, getSavedWriteToken, saveWriteToken } from "./urlTokens.js";
+import {
+  applyUrlTokens,
+  getSavedWriteToken,
+  getWriteTokenHeader,
+  saveWriteToken,
+} from "./urlTokens.js";
 
 function setBrowser(protocol, search = "?write_token=secret", stored = {}) {
   globalThis.document = { cookie: "" };
@@ -53,6 +58,14 @@ describe("saved write token", () => {
 
     expect(stored).toEqual({});
     expect(globalThis.document.cookie).toContain("max-age=0");
+  });
+
+  test("a saved token is sent as a request header for embedded dashboards", () => {
+    setBrowser("http:", "", { trackio_write_token: "saved" });
+    expect(getWriteTokenHeader()).toEqual({ "x-trackio-write-token": "saved" });
+
+    saveWriteToken("");
+    expect(getWriteTokenHeader()).toEqual({});
   });
 });
 
