@@ -284,7 +284,9 @@
         );
       }
       if (configs != null) {
-        runConfigs = configs;
+        if (JSON.stringify(runConfigs) !== JSON.stringify(configs)) {
+          runConfigs = configs;
+        }
         runConfigsProject = project;
       }
     } catch (e) {
