@@ -197,7 +197,7 @@
           </p>
         {:else if writeTokenStatus === "rejected"}
           <p class="token-status rejected" role="status">
-            Token not accepted. Check that it matches the server's write token. After several wrong attempts, wait a minute before trying again.
+            Token not accepted. Check that it matches the server's write token.
           </p>
         {/if}
       </section>
