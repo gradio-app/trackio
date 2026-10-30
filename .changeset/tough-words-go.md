@@ -2,4 +2,4 @@
 "trackio": minor
 ---
 
-feat:Group media by key with a step slider, add per-row setting and maximize for HTML figures
+feat:Add an items-per-row setting and maximize for HTML figures on the Media page, and stop it reloading
