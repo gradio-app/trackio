@@ -145,6 +145,15 @@ def test_silence_float_no_division_by_zero(tmp_path: Path) -> None:
     assert np.all(pcm == 0)
 
 
+@pytest.mark.parametrize("dtype", [np.float16, np.float32, np.float64])
+def test_non_finite_floats_keep_finite_samples(dtype) -> None:
+    mono = np.array([0.25, np.inf, 0.5, -np.inf, np.nan], dtype=dtype)
+    original = mono.copy()
+    pcm = TrackioAudio.ensure_int16_pcm(mono)
+    assert pcm.tolist() == [16383, 32767, 32767, -32767, 0]
+    np.testing.assert_array_equal(mono, original)
+
+
 def test_invalid_shape_raises(tmp_path: Path) -> None:
     bad = np.zeros((10, 2, 2), dtype=np.float32)
     with pytest.raises(ValueError):
