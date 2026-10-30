@@ -5,6 +5,7 @@
   import WaveformAudio from "../components/WaveformAudio.svelte";
   import { getLogs, getMediaUrl } from "../lib/api.js";
   import { filterMetricsByRegex } from "../lib/dataProcessing.js";
+  import { AUTO_PANELS_PER_ROW, isAutoPanels } from "../lib/plotLayout.js";
   import { buildColorMap } from "../lib/stores.js";
 
   let {
@@ -12,7 +13,12 @@
     selectedRuns = [],
     allRuns = [],
     tableTruncateLength = 250,
+    panelsPerRow = AUTO_PANELS_PER_ROW,
   } = $props();
+
+  let galleryColumns = $derived(
+    isAutoPanels(panelsPerRow) ? null : `repeat(${panelsPerRow}, minmax(0, 1fr))`,
+  );
 
   let runColorMap = $derived(
     buildColorMap(allRuns.length ? allRuns : selectedRuns),
@@ -357,6 +363,16 @@
         <span class="meta-text">{item._run}, Step: {item.step}</span>
       </div>
     {/snippet}
+    {#snippet expandButton(onclick, label)}
+      <button type="button" class="expand-button" {onclick} title={label} aria-label={label}>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <polyline points="15 3 21 3 21 9"/>
+          <polyline points="9 21 3 21 3 15"/>
+          <line x1="21" y1="3" x2="14" y2="10"/>
+          <line x1="3" y1="21" x2="10" y2="14"/>
+        </svg>
+      </button>
+    {/snippet}
     {#if mediaItems.images.length > 0}
       <details class="section" open>
         <summary class="section-summary image-section-summary">
@@ -392,7 +408,7 @@
             </div>
           </div>
         </summary>
-        <div class="gallery">
+        <div class="gallery" style:grid-template-columns={galleryColumns}>
           {#each visibleMediaItems.images as img, i}
             <div class="gallery-item">
               <div class="media-label">{img.key}</div>
@@ -439,7 +455,7 @@
           </svg>
           <span class="section-title">3D Objects ({mediaItems.object3ds.length})</span>
         </summary>
-        <div class="gallery">
+        <div class="gallery" style:grid-template-columns={galleryColumns}>
           {#each visibleMediaItems.object3ds as object3d}
             <Object3DCard
               item={object3d}
@@ -465,7 +481,7 @@
           </svg>
           <span class="section-title">Videos ({mediaItems.videos.length})</span>
         </summary>
-        <div class="gallery">
+        <div class="gallery" style:grid-template-columns={galleryColumns}>
           {#each visibleMediaItems.videos as vid}
             <div class="gallery-item">
               <div class="media-label">{vid.key}</div>
@@ -493,7 +509,7 @@
           </svg>
           <span class="section-title">Audio ({mediaItems.audios.length})</span>
         </summary>
-        <div class="gallery">
+        <div class="gallery" style:grid-template-columns={galleryColumns}>
           {#each visibleMediaItems.audios as aud}
             <div class="gallery-item audio-gallery-item">
               <div class="media-label">{aud.key}</div>
@@ -626,10 +642,16 @@
           </svg>
           <span class="section-title">HTML ({mediaItems.htmls.length})</span>
         </summary>
-        <div class="gallery html-gallery">
-          {#each visibleMediaItems.htmls as item}
+        <div class="gallery html-gallery" style:grid-template-columns={galleryColumns}>
+          {#each visibleMediaItems.htmls as item, i}
             <div class="gallery-item html-gallery-item">
-              <div class="media-label">{item.key}</div>
+              <div class="table-header">
+                <div class="media-label">{item.key}</div>
+                {@render expandButton(
+                  () => openImage(item, null, mediaItems.htmls, i),
+                  `Maximize ${item.caption || item.key}`,
+                )}
+              </div>
               <iframe
                 class="html-frame"
                 src={getFilePath(item)}
@@ -677,16 +699,25 @@
           ‹
         </button>
       {/if}
-      <div class="modal-image-frame">
-        <span class="modal-image-placeholder">Loading image…</span>
-        <img
+      {#if selectedImage._type === "trackio.html"}
+        <iframe
+          class="modal-html-frame"
           src={getFilePath(selectedImage)}
-          alt={selectedImage.caption || selectedImage.key || "Image preview"}
-          decoding="async"
-          onload={markImageLoaded}
-          onerror={markImageFailed}
-        />
-      </div>
+          title={selectedImage.caption || selectedImage.key}
+          sandbox="allow-scripts allow-downloads"
+        ></iframe>
+      {:else}
+        <div class="modal-image-frame">
+          <span class="modal-image-placeholder">Loading image…</span>
+          <img
+            src={getFilePath(selectedImage)}
+            alt={selectedImage.caption || selectedImage.key || "Image preview"}
+            decoding="async"
+            onload={markImageLoaded}
+            onerror={markImageFailed}
+          />
+        </div>
+      {/if}
       {#if selectedImageList.length > 1}
         <button
           class="image-modal-nav image-modal-next"
@@ -1087,6 +1118,28 @@
     max-width: 100%;
     max-height: calc(92vh - 96px);
     object-fit: contain;
+  }
+  .modal-html-frame {
+    width: min(92vw, 1200px);
+    height: calc(92vh - 96px);
+    border: 0;
+    background: var(--background-fill-primary, white);
+  }
+  .expand-button {
+    border: 1px solid var(--border-color-primary, #e5e7eb);
+    background: var(--background-fill-primary, white);
+    color: var(--body-text-color-subdued, #6b7280);
+    cursor: pointer;
+    padding: 4px 6px;
+    border-radius: var(--radius-sm, 4px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+  .expand-button:hover {
+    background: var(--neutral-100, #f3f4f6);
+    color: var(--body-text-color, #1f2937);
   }
   .image-modal-info {
     display: flex;
