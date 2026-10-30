@@ -5,7 +5,6 @@
   import WaveformAudio from "../components/WaveformAudio.svelte";
   import { getLogs, getMediaUrl } from "../lib/api.js";
   import { filterMetricsByRegex } from "../lib/dataProcessing.js";
-  import { groupMediaByKey } from "../lib/mediaGroups.js";
   import { AUTO_PANELS_PER_ROW, isAutoPanels } from "../lib/plotLayout.js";
   import { buildColorMap } from "../lib/stores.js";
 
@@ -107,33 +106,14 @@
     return mediaItems.images.filter((img) => matches.has(imageName(img)));
   });
 
-  let mediaGroups = $derived.by(() => ({
-    images: groupMediaByKey(filteredImages),
-    videos: groupMediaByKey(mediaItems.videos),
-    audios: groupMediaByKey(mediaItems.audios),
-    tables: groupMediaByKey(mediaItems.tables),
-    htmls: groupMediaByKey(mediaItems.htmls),
-  }));
-
   let visibleMediaItems = $derived.by(() => ({
-    images: mediaGroups.images.slice(0, visibleCounts.images),
-    videos: mediaGroups.videos.slice(0, visibleCounts.videos),
-    audios: mediaGroups.audios.slice(0, visibleCounts.audios),
+    images: filteredImages.slice(0, visibleCounts.images),
+    videos: mediaItems.videos.slice(0, visibleCounts.videos),
+    audios: mediaItems.audios.slice(0, visibleCounts.audios),
     object3ds: mediaItems.object3ds.slice(0, visibleCounts.object3ds),
-    tables: mediaGroups.tables.slice(0, visibleCounts.tables),
-    htmls: mediaGroups.htmls.slice(0, visibleCounts.htmls),
+    tables: mediaItems.tables.slice(0, visibleCounts.tables),
+    htmls: mediaItems.htmls.slice(0, visibleCounts.htmls),
   }));
-
-  let groupSteps = $state({});
-
-  function selectedIndex(group) {
-    const last = group.items.length - 1;
-    return Math.min(groupSteps[group.id] ?? last, last);
-  }
-
-  function selectedItem(group) {
-    return group.items[selectedIndex(group)];
-  }
 
   let hasMedia = $derived(
     mediaItems.images.length > 0 ||
@@ -383,20 +363,6 @@
         <span class="meta-text">{item._run}, Step: {item.step}</span>
       </div>
     {/snippet}
-    {#snippet stepSlider(group)}
-      {#if group.items.length > 1}
-        <input
-          class="step-slider"
-          type="range"
-          min="0"
-          max={group.items.length - 1}
-          step="1"
-          value={selectedIndex(group)}
-          oninput={(event) => (groupSteps[group.id] = Number(event.currentTarget.value))}
-          aria-label={`Step for ${group.items[0].key}`}
-        />
-      {/if}
-    {/snippet}
     {#snippet expandButton(onclick, label)}
       <button type="button" class="expand-button" {onclick} title={label} aria-label={label}>
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -443,14 +409,13 @@
           </div>
         </summary>
         <div class="gallery" style:grid-template-columns={galleryColumns}>
-          {#each visibleMediaItems.images as group (group.id)}
-            {@const img = selectedItem(group)}
+          {#each visibleMediaItems.images as img, i}
             <div class="gallery-item">
               <div class="media-label">{img.key}</div>
               <button
                 class="image-frame"
                 type="button"
-                onclick={() => openImage(img, null, group.items, selectedIndex(group))}
+                onclick={() => openImage(img, null, filteredImages, i)}
                 aria-label={`Open ${img.caption || img.key}`}
               >
                 <span class="image-placeholder">Loading image…</span>
@@ -466,7 +431,6 @@
               {#if img.caption}
                 <div class="caption">{img.caption}</div>
               {/if}
-              {@render stepSlider(group)}
               {@render meta(img)}
             </div>
           {/each}
@@ -474,9 +438,9 @@
         {#if filteredImages.length === 0}
           <div class="empty-filter-state">No images match this filter.</div>
         {/if}
-        {#if visibleCounts.images < mediaGroups.images.length}
+        {#if visibleCounts.images < filteredImages.length}
           <div class="pagination-row">
-            <span>Showing {visibleMediaItems.images.length} of {mediaGroups.images.length}</span>
+            <span>Showing {visibleMediaItems.images.length} of {filteredImages.length}</span>
             <button type="button" class="load-more-button" onclick={() => showMore("images")}>Load more</button>
           </div>
         {/if}
@@ -518,21 +482,19 @@
           <span class="section-title">Videos ({mediaItems.videos.length})</span>
         </summary>
         <div class="gallery" style:grid-template-columns={galleryColumns}>
-          {#each visibleMediaItems.videos as group (group.id)}
-            {@const vid = selectedItem(group)}
+          {#each visibleMediaItems.videos as vid}
             <div class="gallery-item">
               <div class="media-label">{vid.key}</div>
               <video controls src={getFilePath(vid)} preload="metadata">
                 <track kind="captions" />
               </video>
-              {@render stepSlider(group)}
               {@render meta(vid)}
             </div>
           {/each}
         </div>
-        {#if visibleCounts.videos < mediaGroups.videos.length}
+        {#if visibleCounts.videos < mediaItems.videos.length}
           <div class="pagination-row">
-            <span>Showing {visibleMediaItems.videos.length} of {mediaGroups.videos.length}</span>
+            <span>Showing {visibleMediaItems.videos.length} of {mediaItems.videos.length}</span>
             <button type="button" class="load-more-button" onclick={() => showMore("videos")}>Load more</button>
           </div>
         {/if}
@@ -548,19 +510,17 @@
           <span class="section-title">Audio ({mediaItems.audios.length})</span>
         </summary>
         <div class="gallery" style:grid-template-columns={galleryColumns}>
-          {#each visibleMediaItems.audios as group (group.id)}
-            {@const aud = selectedItem(group)}
+          {#each visibleMediaItems.audios as aud}
             <div class="gallery-item audio-gallery-item">
               <div class="media-label">{aud.key}</div>
               <WaveformAudio src={getFilePath(aud)} />
-              {@render stepSlider(group)}
               {@render meta(aud)}
             </div>
           {/each}
         </div>
-        {#if visibleCounts.audios < mediaGroups.audios.length}
+        {#if visibleCounts.audios < mediaItems.audios.length}
           <div class="pagination-row">
-            <span>Showing {visibleMediaItems.audios.length} of {mediaGroups.audios.length}</span>
+            <span>Showing {visibleMediaItems.audios.length} of {mediaItems.audios.length}</span>
             <button type="button" class="load-more-button" onclick={() => showMore("audios")}>Load more</button>
           </div>
         {/if}
@@ -575,12 +535,10 @@
           </svg>
           <span class="section-title">Tables ({mediaItems.tables.length})</span>
         </summary>
-        {#each visibleMediaItems.tables as group (group.id)}
-          {@const tbl = selectedItem(group)}
+        {#each visibleMediaItems.tables as tbl}
           <div class="table-section">
             <div class="table-header">
               <div class="media-label">{tbl.key}</div>
-              {@render stepSlider(group)}
               {@render meta(tbl)}
             </div>
             <table class="runs-table">
@@ -667,9 +625,9 @@
             </table>
           </div>
         {/each}
-        {#if visibleCounts.tables < mediaGroups.tables.length}
+        {#if visibleCounts.tables < mediaItems.tables.length}
           <div class="pagination-row">
-            <span>Showing {visibleMediaItems.tables.length} of {mediaGroups.tables.length}</span>
+            <span>Showing {visibleMediaItems.tables.length} of {mediaItems.tables.length}</span>
             <button type="button" class="load-more-button" onclick={() => showMore("tables")}>Load more</button>
           </div>
         {/if}
@@ -685,13 +643,12 @@
           <span class="section-title">HTML ({mediaItems.htmls.length})</span>
         </summary>
         <div class="gallery html-gallery" style:grid-template-columns={galleryColumns}>
-          {#each visibleMediaItems.htmls as group (group.id)}
-            {@const item = selectedItem(group)}
+          {#each visibleMediaItems.htmls as item, i}
             <div class="gallery-item html-gallery-item">
               <div class="table-header">
                 <div class="media-label">{item.key}</div>
                 {@render expandButton(
-                  () => openImage(item, null, group.items, selectedIndex(group)),
+                  () => openImage(item, null, mediaItems.htmls, i),
                   `Maximize ${item.caption || item.key}`,
                 )}
               </div>
@@ -705,14 +662,13 @@
               {#if item.caption}
                 <div class="caption">{item.caption}</div>
               {/if}
-              {@render stepSlider(group)}
               {@render meta(item)}
             </div>
           {/each}
         </div>
-        {#if visibleCounts.htmls < mediaGroups.htmls.length}
+        {#if visibleCounts.htmls < mediaItems.htmls.length}
           <div class="pagination-row">
-            <span>Showing {visibleMediaItems.htmls.length} of {mediaGroups.htmls.length}</span>
+            <span>Showing {visibleMediaItems.htmls.length} of {mediaItems.htmls.length}</span>
             <button type="button" class="load-more-button" onclick={() => showMore("htmls")}>Load more</button>
           </div>
         {/if}
@@ -1168,15 +1124,6 @@
     height: calc(92vh - 96px);
     border: 0;
     background: var(--background-fill-primary, white);
-  }
-  .step-slider {
-    width: 100%;
-    margin: 0;
-    accent-color: var(--color-accent, #f97316);
-  }
-  .table-header .step-slider {
-    flex: 1;
-    max-width: 320px;
   }
   .expand-button {
     border: 1px solid var(--border-color-primary, #e5e7eb);
