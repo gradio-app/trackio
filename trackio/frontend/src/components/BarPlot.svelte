@@ -1,6 +1,7 @@
 <script>
   import { onMount, tick } from "svelte";
   import embed from "vega-embed";
+  import { buildBarXAxis } from "../lib/barAxis.js";
   import { buildColorSpecKey } from "../lib/dataProcessing.js";
   import {
     createVegaViewManager,
@@ -110,11 +111,7 @@
           field: "key",
           type: "nominal",
           sort: keys,
-          axis: {
-            labelAngle: keys.length > 4 ? -45 : 0,
-            labelLimit: 120,
-            labelExpr: `${JSON.stringify(labelByKey)}[datum.value] || datum.value`,
-          },
+          axis: buildBarXAxis(labelByKey),
           title: null,
         },
         y: {
