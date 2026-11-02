@@ -1,6 +1,7 @@
 <script>
   import { onMount, tick } from "svelte";
   import embed from "vega-embed";
+  import { buildBarLabelLayout, settleBarLabels } from "../lib/barAxis.js";
   import { buildColorSpecKey } from "../lib/dataProcessing.js";
   import {
     createVegaViewManager,
@@ -92,6 +93,8 @@
       barData.map((d) => [d.key, d.label]),
     );
 
+    const labelLayout = buildBarLabelLayout(labelByKey);
+
     const yTitle = y.includes("/") ? y.split("/").pop() : y;
 
     return {
@@ -99,6 +102,7 @@
       width: "container",
       height: fullscreen ? "container" : 250,
       autosize: { type: "fit", contains: "padding" },
+      params: labelLayout.params,
       data: { values: barData },
       mark: {
         type: "bar",
@@ -110,11 +114,7 @@
           field: "key",
           type: "nominal",
           sort: keys,
-          axis: {
-            labelAngle: keys.length > 4 ? -45 : 0,
-            labelLimit: 120,
-            labelExpr: `${JSON.stringify(labelByKey)}[datum.value] || datum.value`,
-          },
+          axis: labelLayout.axis,
           title: null,
         },
         y: {
@@ -148,12 +148,13 @@
     };
   }
 
-  function syncViewSize() {
+  async function syncViewSize() {
     const view = viewManager.current;
     if (!view || !container) return;
     view.width(container.clientWidth);
     if (fullscreen) view.height(container.clientHeight);
-    view.resize().run();
+    await view.resize().runAsync();
+    if (viewManager.current === view) await settleBarLabels(view);
   }
 
   async function render() {
