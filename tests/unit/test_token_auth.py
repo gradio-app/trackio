@@ -5,6 +5,19 @@ from unittest.mock import Mock
 from trackio.server import check_write_access as check_write_access_runs
 
 
+def test_check_write_access_header():
+    mock_request = Mock()
+    mock_request.query_params = {}
+    for token, allowed in [
+        ("secret", True),
+        ("wrong!", False),
+        ("secret-but-longer", False),
+        ("", False),
+    ]:
+        mock_request.headers = {"x-trackio-write-token": token}
+        assert check_write_access_runs(mock_request, "secret") is allowed
+
+
 def test_check_write_access():
     test_token = "test_token_123"
 

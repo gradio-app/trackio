@@ -1,5 +1,6 @@
 import * as staticApi from "./staticApi.js";
 import { registerRateLimitHit } from "./hostPolling.js";
+import { getWriteTokenHeader } from "./urlTokens.js";
 
 const BASE = window.__trackio_base || "";
 
@@ -55,7 +56,11 @@ export async function callApi(apiName, params = {}, requestOptions = {}) {
   const resp = await fetch(url, {
     method: "POST",
     credentials: "include",
-    headers: { "Content-Type": "application/json", ...getOauthSessionHeader() },
+    headers: {
+      "Content-Type": "application/json",
+      ...getOauthSessionHeader(),
+      ...getWriteTokenHeader(),
+    },
     body: JSON.stringify(params),
     signal: requestOptions.signal,
   });
