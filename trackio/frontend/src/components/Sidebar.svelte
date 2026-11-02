@@ -29,6 +29,7 @@
     selectedSystemDevices = $bindable([]),
     smoothing = $bindable(10),
     panelsPerRow = $bindable(AUTO_PANELS_PER_ROW),
+    mediaPerRow = $bindable(AUTO_PANELS_PER_ROW),
     xAxis = $bindable("step"),
     logScaleX = $bindable(false),
     logScaleY = $bindable(false),
@@ -542,6 +543,20 @@
               info="Filter metrics using regex patterns. Leave empty to show all metrics."
               placeholder="e.g., loss|ndcg@10|gpu"
               bind:value={metricFilter}
+            />
+          </div>
+        {/if}
+
+        {#if currentPage === "media"}
+          <span class="section-label">Display Settings</span>
+
+          <div class="section">
+            <Dropdown
+              label="Items per row"
+              info="Auto fits items to the available width."
+              choices={PANELS_PER_ROW_CHOICES}
+              bind:value={mediaPerRow}
+              filterable={false}
             />
           </div>
         {/if}
