@@ -1,5 +1,20 @@
 # trackio
 
+## 0.45.0
+
+### Features
+
+- [#742](https://github.com/gradio-app/trackio/pull/742) [`d101584`](https://github.com/gradio-app/trackio/commit/d101584ae555b1f29e9fcecc2afc5aac589968ec) - Migrate from httpx to httpx2 and drop gradio_client.  Thanks @abidlabs!
+- [#741](https://github.com/gradio-app/trackio/pull/741) [`c7d6ea9`](https://github.com/gradio-app/trackio/commit/c7d6ea9140fa9e32e35332f058397759e41c689c) - Add TRACKIO_HANDLE_SIGTERM to save logs when a run receives SIGTERM.  Thanks @abidlabs!
+- [#745](https://github.com/gradio-app/trackio/pull/745) [`189c946`](https://github.com/gradio-app/trackio/commit/189c9460a3709cacd1ac94dfd1ff3359f7ae7d01) - Keep finite samples audible when audio arrays contain inf or nan.  Thanks @abidlabs!
+- [#747](https://github.com/gradio-app/trackio/pull/747) [`6375c25`](https://github.com/gradio-app/trackio/commit/6375c257e4d63aa625fd1ccaeb74f0580abd0d76) - Add a write token field to Settings, saved in local storage.  Thanks @abidlabs!
+- [#748](https://github.com/gradio-app/trackio/pull/748) [`c2ea474`](https://github.com/gradio-app/trackio/commit/c2ea47402c5258c55e97343319640151bfe8f71b) - Keep bar chart x-axis labels from overlapping.  Thanks @abidlabs!
+- [#746](https://github.com/gradio-app/trackio/pull/746) [`0b0edc1`](https://github.com/gradio-app/trackio/commit/0b0edc1f9e8f970fc5ca80a87961eba40d947dde) - Add an items-per-row setting and maximize for HTML figures on the Media page, and stop it reloading.  Thanks @abidlabs!
+
+### Fixes
+
+- [#749](https://github.com/gradio-app/trackio/pull/749) [`445275f`](https://github.com/gradio-app/trackio/commit/445275f0a1c8db4bbeebb325e38b8d8083733544) - Require huggingface-hub>=1.31.0 so `huggingface_hub.utils.httpx` is always available.  Thanks @abidlabs!
+
 ## 0.44.0
 
 ### Features
