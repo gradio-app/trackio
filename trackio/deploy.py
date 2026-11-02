@@ -17,6 +17,7 @@ from huggingface_hub.errors import (
     HfHubHTTPError,
     RepositoryNotFoundError,
 )
+from huggingface_hub.utils import httpx
 
 import trackio
 from trackio.bucket_storage import (
@@ -32,7 +33,6 @@ from trackio.remote_client import RemoteClient, handle_file
 from trackio.sqlite_storage import SQLiteStorage
 from trackio.utils import (
     get_or_create_project_hash,
-    hub_httpx,
     on_spaces,
     preprocess_space_and_dataset_ids,
     project_artifacts_dir,
@@ -99,7 +99,7 @@ def _retry_hf_write(op_name: str, fn, retries: int = 4, initial_delay: float = 1
     for attempt in range(1, retries + 1):
         try:
             return fn()
-        except hub_httpx.ReadTimeout:
+        except httpx.ReadTimeout:
             if attempt == retries:
                 raise
             print(
@@ -632,7 +632,7 @@ def _wait_until_space_running(space_id: str, timeout: int = 300) -> None:
                     return
         except RuntimeError:
             raise
-        except (huggingface_hub.utils.HfHubHTTPError, hub_httpx.RequestError):
+        except (HfHubHTTPError, httpx.RequestError):
             pass
         time.sleep(delay)
         delay = min(delay * 1.5, 15)
@@ -661,7 +661,7 @@ def wait_until_space_exists(
         try:
             hf_api.space_info(space_id)
             return
-        except (huggingface_hub.utils.HfHubHTTPError, hub_httpx.RequestError):
+        except (HfHubHTTPError, httpx.RequestError):
             time.sleep(delay)
             delay = min(delay * 2, 60)
     raise TimeoutError("Waiting for space to exist took longer than expected")
