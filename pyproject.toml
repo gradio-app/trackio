@@ -13,7 +13,7 @@ authors = [
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
-    "huggingface-hub>=1.10.0,<3",
+    "huggingface-hub>=1.31.0,<3",
     "httpx2>=2.0.0,<3",
     "starlette<2.0.0",
     "python-multipart>=0.0.9,<1.0.0",
