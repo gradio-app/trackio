@@ -1,4 +1,7 @@
+import hashlib
 from pathlib import Path
+
+import pytest
 
 from trackio import bucket_storage
 from trackio.sqlite_storage import SQLiteStorage
@@ -62,6 +65,47 @@ def test_upload_project_to_bucket_ships_media_and_artifacts_together(
     assert f"trackio/artifacts/p/blobs/sha256/{digest_a[:2]}/{digest_a}" in remote_paths
     assert f"trackio/artifacts/p/blobs/sha256/{digest_b[:2]}/{digest_b}" in remote_paths
     assert any(p.endswith(".db") and "trackio/" in p for p in remote_paths)
+
+
+def test_logbook_captured_file_is_verified_before_upload(tmp_path, monkeypatch):
+    source = tmp_path / "captured.bin"
+    source.write_bytes(b"captured")
+    digest = hashlib.sha256(b"captured").hexdigest()
+    captured = _captured(monkeypatch)
+
+    uploaded = bucket_storage.upload_logbook_path_artifacts_to_bucket(
+        "user/bucket",
+        [
+            {
+                "path": "model.bin",
+                "abs_path": str(source),
+                "digest": digest,
+                "size": len(b"captured"),
+            }
+        ],
+    )
+
+    assert uploaded == ["model.bin"]
+    assert captured["add"] == [(str(source), "logbook-files/model.bin")]
+
+
+def test_logbook_captured_file_integrity_failure_blocks_upload(tmp_path, monkeypatch):
+    source = tmp_path / "captured.bin"
+    source.write_bytes(b"changed")
+    _captured(monkeypatch)
+
+    with pytest.raises(ValueError, match="integrity verification"):
+        bucket_storage.upload_logbook_path_artifacts_to_bucket(
+            "user/bucket",
+            [
+                {
+                    "path": "model.bin",
+                    "abs_path": str(source),
+                    "digest": hashlib.sha256(b"original").hexdigest(),
+                    "size": len(b"original"),
+                }
+            ],
+        )
 
 
 def test_replay_pending_uploads_routes_both_kinds(temp_dir, tmp_path):
