@@ -2,6 +2,9 @@
 
 from unittest.mock import Mock
 
+import pytest
+
+import trackio.server as trackio_server
 from trackio.server import check_write_access as check_write_access_runs
 
 
@@ -36,3 +39,32 @@ def test_check_write_access():
     mock_request.headers = {"cookie": ""}
     mock_request.query_params = {}
     assert not check_write_access_runs(mock_request, test_token)
+
+
+@pytest.mark.parametrize(
+    "who, allowed",
+    [
+        ({"name": "acme", "orgs": []}, True),
+        ({"name": "alice", "orgs": [{"name": "acme", "roleInOrg": "admin"}]}, True),
+        ({"name": "bob", "orgs": [{"name": "acme", "roleInOrg": "write"}]}, True),
+        (
+            {"name": "carol", "orgs": [{"name": "acme", "roleInOrg": "contributor"}]},
+            False,
+        ),
+        ({"name": "dave", "orgs": [{"name": "acme", "roleInOrg": "read"}]}, False),
+        ({"name": "erin", "orgs": [{"name": "other", "roleInOrg": "admin"}]}, False),
+    ],
+)
+def test_run_mutation_status_for_space_owner_org_roles(monkeypatch, who, allowed):
+    monkeypatch.setenv("SYSTEM", "spaces")
+    monkeypatch.setenv("SPACE_AUTHOR_NAME", "acme")
+    monkeypatch.setattr(trackio_server, "_oauth_write_cache", {})
+    monkeypatch.setattr(trackio_server.HfApi, "whoami", lambda token, cache=False: who)
+
+    mock_request = Mock()
+    mock_request.headers = {"cookie": "trackio_hf_access_token=hf_oauth"}
+    mock_request.query_params = {}
+    status = trackio_server.get_run_mutation_status(mock_request)
+
+    assert status["allowed"] is allowed
+    assert status["auth"] == ("oauth" if allowed else "oauth_insufficient")
