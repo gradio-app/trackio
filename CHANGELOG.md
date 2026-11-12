@@ -1,5 +1,13 @@
 # trackio
 
+## 0.45.1
+
+### Features
+
+- [#751](https://github.com/gradio-app/trackio/pull/751) [`982d3ef`](https://github.com/gradio-app/trackio/commit/982d3ef919e1458d96b0b5fd747cba8f2592fae1) - Allow Space owner org admins to edit runs when signed in.  Thanks @abidlabs!
+- [#753](https://github.com/gradio-app/trackio/pull/753) [`b429c24`](https://github.com/gradio-app/trackio/commit/b429c244fc6bd4a6e28d8d7d11117e737569b285) - Fix media preservation on run rename and remote retry routing.  Thanks @abidlabs!
+- [#756](https://github.com/gradio-app/trackio/pull/756) [`ace4a96`](https://github.com/gradio-app/trackio/commit/ace4a96920cee55ef562f3bfdecd6c61ef08d299) - Confine media uploads and run mutations to project directories.  Thanks @abidlabs!
+
 ## 0.45.0
 
 ### Features
