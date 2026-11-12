@@ -719,12 +719,13 @@ def _replay_pending_uploads(
     project: str,
     client: "RemoteClient",
     hf_token: str | None,
+    space_id: str | None = None,
 ) -> None:
     """Replay queued `pending_uploads` rows for `project` via `client` — the
     out-of-Run sync path (`trackio sync`); see `replay_pending_uploads` for the
     per-kind routing and clearing semantics.
     """
-    pending_uploads = SQLiteStorage.get_pending_uploads(project)
+    pending_uploads = SQLiteStorage.get_pending_uploads(project, space_id=space_id)
     if not pending_uploads:
         return
 
@@ -776,7 +777,7 @@ def sync_incremental(
     )
 
     if pending_only:
-        pending_logs = SQLiteStorage.get_pending_logs(project)
+        pending_logs = SQLiteStorage.get_pending_logs(project, space_id=space_id)
         if pending_logs:
             logs = pending_logs["logs"]
             expected_run_counts.update(log["run"] for log in logs)
@@ -788,7 +789,7 @@ def sync_incremental(
                 client.predict(api_name="/bulk_log", logs=batch, hf_token=hf_token)
             SQLiteStorage.clear_pending_logs(project, pending_logs["ids"])
 
-        pending_sys = SQLiteStorage.get_pending_system_logs(project)
+        pending_sys = SQLiteStorage.get_pending_system_logs(project, space_id=space_id)
         if pending_sys:
             logs = pending_sys["logs"]
             for i in range(0, len(logs), SYNC_BATCH_SIZE):
@@ -801,7 +802,7 @@ def sync_incremental(
                 )
             SQLiteStorage.clear_pending_system_logs(project, pending_sys["ids"])
 
-        _replay_pending_uploads(project, client, hf_token)
+        _replay_pending_uploads(project, client, hf_token, space_id=space_id)
     else:
         all_logs = SQLiteStorage.get_all_logs_for_sync(project)
         if all_logs:

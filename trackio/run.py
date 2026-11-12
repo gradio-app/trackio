@@ -765,8 +765,12 @@ class Run:
 
     def _flush_local_buffer(self) -> bool:
         try:
-            buffered_logs = SQLiteStorage.get_pending_logs(self.project)
-            buffered_traces = SQLiteStorage.get_pending_traces(self.project)
+            buffered_logs = SQLiteStorage.get_pending_logs(
+                self.project, space_id=self._remote_storage_key
+            )
+            buffered_traces = SQLiteStorage.get_pending_traces(
+                self.project, space_id=self._remote_storage_key
+            )
             if buffered_logs or buffered_traces:
                 self._client.predict(
                     api_name="/bulk_log",
@@ -782,7 +786,9 @@ class Run:
                         self.project, buffered_traces["ids"]
                     )
 
-            buffered_sys = SQLiteStorage.get_pending_system_logs(self.project)
+            buffered_sys = SQLiteStorage.get_pending_system_logs(
+                self.project, space_id=self._remote_storage_key
+            )
             if buffered_sys:
                 self._client.predict(
                     api_name="/bulk_log_system",
@@ -793,7 +799,9 @@ class Run:
                     self.project, buffered_sys["ids"]
                 )
 
-            buffered_uploads = SQLiteStorage.get_pending_uploads(self.project)
+            buffered_uploads = SQLiteStorage.get_pending_uploads(
+                self.project, space_id=self._remote_storage_key
+            )
             if buffered_uploads:
                 self._send_pending_uploads_to_server(buffered_uploads)
 
@@ -919,7 +927,9 @@ class Run:
         return entries + order
 
     def _flush_pending_uploads_to_bucket(self) -> None:
-        pending = SQLiteStorage.get_pending_uploads(self.project)
+        pending = SQLiteStorage.get_pending_uploads(
+            self.project, space_id=self._remote_storage_key
+        )
         if not pending:
             return
         classified = classify_pending_uploads(pending)
@@ -954,8 +964,12 @@ class Run:
         bucket rather than replayed to the Space.
         """
         try:
-            pending = SQLiteStorage.get_pending_logs(self.project)
-            pending_traces = SQLiteStorage.get_pending_traces(self.project)
+            pending = SQLiteStorage.get_pending_logs(
+                self.project, space_id=self._remote_storage_key
+            )
+            pending_traces = SQLiteStorage.get_pending_traces(
+                self.project, space_id=self._remote_storage_key
+            )
             entries = self._unspilled_entries_with_traces(pending, pending_traces)
             if entries:
                 records = self._attach_run_config(
@@ -967,7 +981,9 @@ class Run:
                 if pending_traces:
                     self._spilled_trace_ids.update(pending_traces["ids"])
 
-            pending_sys = SQLiteStorage.get_pending_system_logs(self.project)
+            pending_sys = SQLiteStorage.get_pending_system_logs(
+                self.project, space_id=self._remote_storage_key
+            )
             entries = self._unspilled_pending(pending_sys, self._spilled_system_ids)
             if entries:
                 records = [fragments.system_metric_record(entry) for entry in entries]
@@ -985,8 +1001,12 @@ class Run:
         if self._bucket_id is None or not self._has_local_buffer:
             return
         try:
-            pending = SQLiteStorage.get_pending_logs(self.project)
-            pending_traces = SQLiteStorage.get_pending_traces(self.project)
+            pending = SQLiteStorage.get_pending_logs(
+                self.project, space_id=self._remote_storage_key
+            )
+            pending_traces = SQLiteStorage.get_pending_traces(
+                self.project, space_id=self._remote_storage_key
+            )
             if pending or pending_traces:
                 entries = self._unspilled_entries_with_traces(pending, pending_traces)
                 if entries:
@@ -1003,7 +1023,9 @@ class Run:
                     )
                     self._spilled_trace_ids.update(pending_traces["ids"])
 
-            pending_sys = SQLiteStorage.get_pending_system_logs(self.project)
+            pending_sys = SQLiteStorage.get_pending_system_logs(
+                self.project, space_id=self._remote_storage_key
+            )
             if pending_sys:
                 entries = self._unspilled_pending(pending_sys, self._spilled_system_ids)
                 if entries:
@@ -1018,7 +1040,9 @@ class Run:
 
             self._flush_pending_uploads_to_bucket()
 
-            self._has_local_buffer = SQLiteStorage.has_pending_data(self.project)
+            self._has_local_buffer = SQLiteStorage.has_pending_data(
+                self.project, space_id=self._remote_storage_key
+            )
         except Exception as e:
             self._warn_once(
                 "bucket-drain",
@@ -1068,7 +1092,9 @@ class Run:
                 raise RuntimeError(
                     "trackio remote client not ready; cannot drain pending_uploads"
                 )
-            buffered = SQLiteStorage.get_pending_uploads(self.project)
+            buffered = SQLiteStorage.get_pending_uploads(
+                self.project, space_id=self._remote_storage_key
+            )
             if not buffered:
                 return
             self._send_pending_uploads_to_server(buffered)
@@ -1905,7 +1931,9 @@ class Run:
                     self._flush_queues_inline()
 
                 try:
-                    has_pending = SQLiteStorage.has_pending_data(self.project)
+                    has_pending = SQLiteStorage.has_pending_data(
+                        self.project, space_id=self._remote_storage_key
+                    )
                 except Exception as e:
                     self._warn_once(
                         "finish-pending-data",
