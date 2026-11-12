@@ -3642,8 +3642,8 @@ class SQLiteStorage:
         NULL-run_id artifact rows matching the name can be safely detached."""
         try:
             if cursor.execute(
-                "SELECT 1 FROM metrics WHERE run_name = ? LIMIT 1",
-                (run_name,),
+                "SELECT 1 FROM metrics WHERE run_name = ? AND run_id != ? LIMIT 1",
+                (run_name, excluding_run_id),
             ).fetchone():
                 return True
         except sqlite3.OperationalError:
@@ -3987,8 +3987,20 @@ class SQLiteStorage:
                     )
                     metrics_rows = cursor.fetchall()
 
-                    old_prefix = f"{project}/{old_name}/"
-                    new_prefix = f"{project}/{new_name}/"
+                    source_media = project_media_dir(project) / old_name
+                    target_media = project_media_dir(project) / new_name
+                    relocate_media = source_media.resolve() != target_media.resolve()
+                    shared_media = (
+                        SQLiteStorage._run_name_still_in_use(
+                            cursor, old_name, run_value
+                        )
+                        if supports_run_ids
+                        else False
+                    )
+                    if relocate_media and target_media.exists():
+                        target_media = target_media / uuid.uuid4().hex
+                    old_prefix = f"{source_media.relative_to(project_media_dir(project).parent).as_posix()}/"
+                    new_prefix = f"{target_media.relative_to(project_media_dir(project).parent).as_posix()}/"
 
                     updated_rows = []
                     for row in metrics_rows:
@@ -4124,10 +4136,12 @@ class SQLiteStorage:
 
                     conn.commit()
 
-                    SQLiteStorage._move_media_dir(
-                        project_media_dir(project) / old_name,
-                        project_media_dir(project) / new_name,
-                    )
+                    if relocate_media and source_media.exists():
+                        target_media.parent.mkdir(parents=True, exist_ok=True)
+                        if shared_media:
+                            shutil.copytree(source_media, target_media)
+                        else:
+                            shutil.move(str(source_media), str(target_media))
                 except sqlite3.Error as e:
                     raise RuntimeError(
                         f"Database error while renaming run '{old_name}' to '{new_name}': {e}"
@@ -4828,7 +4842,7 @@ class SQLiteStorage:
         return SQLiteStorage.get_project_metadata(project, "space_id")
 
     @staticmethod
-    def has_pending_data(project: str) -> bool:
+    def has_pending_data(project: str, space_id: str | None = None) -> bool:
         db_path = SQLiteStorage.get_project_db_path(project)
         if not db_path.exists():
             return False
@@ -4836,7 +4850,9 @@ class SQLiteStorage:
             cursor = conn.cursor()
             try:
                 cursor.execute(
-                    "SELECT EXISTS(SELECT 1 FROM metrics WHERE space_id IS NOT NULL LIMIT 1)"
+                    "SELECT EXISTS(SELECT 1 FROM metrics WHERE space_id IS NOT NULL "
+                    "AND (? IS NULL OR space_id = ?) LIMIT 1)",
+                    (space_id, space_id),
                 )
                 if cursor.fetchone()[0]:
                     return True
@@ -4844,7 +4860,9 @@ class SQLiteStorage:
                 pass
             try:
                 cursor.execute(
-                    "SELECT EXISTS(SELECT 1 FROM system_metrics WHERE space_id IS NOT NULL LIMIT 1)"
+                    "SELECT EXISTS(SELECT 1 FROM system_metrics WHERE space_id IS NOT NULL "
+                    "AND (? IS NULL OR space_id = ?) LIMIT 1)",
+                    (space_id, space_id),
                 )
                 if cursor.fetchone()[0]:
                     return True
@@ -4852,14 +4870,20 @@ class SQLiteStorage:
                 pass
             try:
                 cursor.execute(
-                    "SELECT EXISTS(SELECT 1 FROM traces WHERE space_id IS NOT NULL LIMIT 1)"
+                    "SELECT EXISTS(SELECT 1 FROM traces WHERE space_id IS NOT NULL "
+                    "AND (? IS NULL OR space_id = ?) LIMIT 1)",
+                    (space_id, space_id),
                 )
                 if cursor.fetchone()[0]:
                     return True
             except sqlite3.OperationalError:
                 pass
             try:
-                cursor.execute("SELECT EXISTS(SELECT 1 FROM pending_uploads LIMIT 1)")
+                cursor.execute(
+                    "SELECT EXISTS(SELECT 1 FROM pending_uploads "
+                    "WHERE (? IS NULL OR space_id = ?) LIMIT 1)",
+                    (space_id, space_id),
+                )
                 if cursor.fetchone()[0]:
                     return True
             except sqlite3.OperationalError:
@@ -4867,9 +4891,13 @@ class SQLiteStorage:
             return False
 
     @staticmethod
-    def get_pending_logs(project: str) -> dict | None:
+    def get_pending_logs(project: str, space_id: str | None = None) -> dict | None:
         return SQLiteStorage._get_pending(
-            project, "metrics", extra_fields=["step"], include_config=True
+            project,
+            "metrics",
+            extra_fields=["step"],
+            include_config=True,
+            space_id=space_id,
         )
 
     @staticmethod
@@ -4877,8 +4905,10 @@ class SQLiteStorage:
         SQLiteStorage._clear_pending(project, "metrics", metric_ids)
 
     @staticmethod
-    def get_pending_system_logs(project: str) -> dict | None:
-        return SQLiteStorage._get_pending(project, "system_metrics")
+    def get_pending_system_logs(
+        project: str, space_id: str | None = None
+    ) -> dict | None:
+        return SQLiteStorage._get_pending(project, "system_metrics", space_id=space_id)
 
     @staticmethod
     def _get_pending(
@@ -4886,6 +4916,7 @@ class SQLiteStorage:
         table: str,
         extra_fields: list[str] | None = None,
         include_config: bool = False,
+        space_id: str | None = None,
     ) -> dict | None:
         db_path = SQLiteStorage.get_project_db_path(project)
         if not db_path.exists():
@@ -4899,7 +4930,9 @@ class SQLiteStorage:
                 )
                 cursor.execute(
                     f"""SELECT id, timestamp, {run_id_col}run_name, {extra_cols}metrics, log_id, space_id
-                    FROM {table} WHERE space_id IS NOT NULL"""
+                    FROM {table} WHERE space_id IS NOT NULL
+                    AND (? IS NULL OR space_id = ?)""",
+                    (space_id, space_id),
                 )
             except sqlite3.OperationalError:
                 return None
@@ -4933,7 +4966,7 @@ class SQLiteStorage:
         SQLiteStorage._clear_pending(project, "system_metrics", metric_ids)
 
     @staticmethod
-    def get_pending_traces(project: str) -> dict | None:
+    def get_pending_traces(project: str, space_id: str | None = None) -> dict | None:
         """Return trace rows still buffered for a remote server.
 
         Each entry carries the `log_id` of the `trackio.log()` call it came
@@ -4952,7 +4985,9 @@ class SQLiteStorage:
                     f"""SELECT id, run_id, run_name, step, key, trace_index, timestamp,
                     messages, metadata, log_id, space_id{spans_select}
                     FROM traces WHERE space_id IS NOT NULL
-                    ORDER BY timestamp, key, trace_index"""
+                    AND (? IS NULL OR space_id = ?)
+                    ORDER BY timestamp, key, trace_index""",
+                    (space_id, space_id),
                 )
             except sqlite3.OperationalError:
                 return None
@@ -5006,7 +5041,7 @@ class SQLiteStorage:
                 conn.commit()
 
     @staticmethod
-    def get_pending_uploads(project: str) -> dict | None:
+    def get_pending_uploads(project: str, space_id: str | None = None) -> dict | None:
         db_path = SQLiteStorage.get_project_db_path(project)
         if not db_path.exists():
             return None
@@ -5028,7 +5063,11 @@ class SQLiteStorage:
                     select_cols.append("kind")
                 if "digest" in columns:
                     select_cols.append("digest")
-                cursor.execute(f"SELECT {', '.join(select_cols)} FROM pending_uploads")
+                cursor.execute(
+                    f"SELECT {', '.join(select_cols)} FROM pending_uploads "
+                    "WHERE (? IS NULL OR space_id = ?)",
+                    (space_id, space_id),
+                )
             except sqlite3.OperationalError:
                 return None
             rows = cursor.fetchall()
