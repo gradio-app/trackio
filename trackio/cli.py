@@ -113,7 +113,7 @@ def _handle_sync(args):
         synced_any = False
         for project in projects:
             space_id = SQLiteStorage.get_space_id(project)
-            if space_id and SQLiteStorage.has_pending_data(project):
+            if space_id and SQLiteStorage.has_pending_data(project, space_id=space_id):
                 sync_incremental(
                     project,
                     space_id,

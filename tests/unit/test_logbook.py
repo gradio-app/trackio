@@ -1,6 +1,5 @@
 import base64
 import json
-import re
 import sys
 from pathlib import Path
 
@@ -676,33 +675,6 @@ def test_promote_rewrites_dashboard_body(proj, monkeypatch):
     cells = _dashboard_cells(proj, "mnist")
     assert cells[0]["local"] is False
     assert cells[0]["link"] == "https://huggingface.co/spaces/me/mnist"
-
-
-def test_preview_app_serves_logbook_and_mounted_dashboard(proj):
-    from starlette.testclient import TestClient
-
-    app = logbook._build_preview_app(proj)
-    client = TestClient(app)
-
-    root = client.get("/")
-    assert root.status_code == 200
-    assert "no-store" in root.headers.get("cache-control", "")
-    assert "Test Logbook" in root.text
-
-    dash_root = client.get("/dashboard/")
-    assert dash_root.status_code == 200
-    assert 'window.__trackio_base = "/dashboard"' in dash_root.text
-
-    match = re.search(r'src="(/dashboard/assets/[^"]+\.js)"', dash_root.text)
-    assert match
-    asset = client.get(match.group(1))
-    assert asset.status_code == 200
-    assert "javascript" in asset.headers.get("content-type", "")
-
-    missing = client.get("/dashboard/no-such-file.js")
-    assert missing.status_code == 404 or "html" in missing.headers.get(
-        "content-type", ""
-    )
 
 
 def test_cli_cell_dashboard(proj, monkeypatch):

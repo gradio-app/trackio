@@ -5,7 +5,7 @@ import secrets
 import time
 import warnings
 from datetime import datetime, timezone
-from pathlib import Path, PureWindowsPath
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 from urllib.parse import quote, urlencode
 
@@ -231,18 +231,15 @@ def resolve_media_path(project: str, *parts: str | Path) -> Path:
     root = project_media_dir(project)
     path = root
     try:
-        if root.resolve() != MEDIA_DIR.resolve() / canonical_project_name(project):
-            raise ValueError(
-                "Project media directory must not redirect to another directory"
-            )
         for part in parts:
             value = str(part)
             segments = value.replace("\\", "/").split("/")
             if (
                 not value
                 or "\x00" in value
-                or ":" in value
-                or PureWindowsPath(value).anchor
+                or value[0] in "/\\"
+                or re.match(r"[A-Za-z]:[\\/]", value)
+                or (os.name == "nt" and ":" in value)
                 or any(
                     segment == ".."
                     or (segment not in ("", ".") and not segment.rstrip(" ."))

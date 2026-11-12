@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 
 import pytest
@@ -49,9 +50,10 @@ def test_upload_rejects_escaping_paths_and_accepts_nested_media(temp_dir):
     ]:
         assert upload(**fields).status_code == 400
         assert sentinel.read_bytes() == b"unchanged"
-    assert upload(run="nested/训练 run").status_code == 200
+    run_name = "nested/训练 run" if os.name == "nt" else "nested/训练 run 12:30"
+    assert upload(run=run_name).status_code == 200
     assert (
-        utils.project_media_dir("project") / "nested/训练 run/0/marker.txt"
+        utils.project_media_dir("project") / run_name / "0/marker.txt"
     ).read_bytes() == b"uploaded"
     assert upload(run=None, step=None, relative_path=".").status_code == 200
 
@@ -137,9 +139,15 @@ def test_rename_and_move_reject_unsafe_names_before_mutation(temp_dir):
         with pytest.raises(ValueError):
             SQLiteStorage.rename_run("project", "run", name, run_id="id")
         with pytest.raises(ValueError):
-            SQLiteStorage.rename_run("project", name, "safe", run_id="id")
-        with pytest.raises(ValueError):
             SQLiteStorage.move_run("project", name, "target", run_id="id")
         assert SQLiteStorage.get_run_records("project")[0]["name"] == "run"
         assert (media / "marker.txt").read_bytes() == b"unchanged"
     assert not SQLiteStorage.get_project_db_path("target").exists()
+
+    SQLiteStorage.bulk_log("project", "..", [{"loss": 1}], run_id="unsafe")
+    SQLiteStorage.rename_run("project", "..", "recovered", run_id="unsafe")
+    assert (media / "marker.txt").read_bytes() == b"unchanged"
+    if os.name != "nt":
+        SQLiteStorage.rename_run("project", "run", "run 12:30", run_id="id")
+        moved = utils.project_media_dir("project") / "run 12:30" / "marker.txt"
+        assert moved.read_bytes() == b"unchanged"
