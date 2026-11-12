@@ -3915,13 +3915,34 @@ class SQLiteStorage:
         return result
 
     @staticmethod
-    def _move_media_dir(source: Path, target: Path):
-        """Move a media directory from source to target."""
-        if source.exists():
-            target.parent.mkdir(parents=True, exist_ok=True)
-            if target.exists():
-                shutil.rmtree(target)
+    def _media_relocation_target(source: Path, target: Path) -> Path | None:
+        """Where a run's media directory should land when relocated to `target`.
+
+        Returns None when both paths are the same directory. An existing
+        target belongs to another run, so the media goes into a fresh
+        subdirectory instead of replacing it."""
+        if source.resolve() == target.resolve():
+            return None
+        if target.exists():
+            return target / uuid.uuid4().hex
+        return target
+
+    @staticmethod
+    def _relocate_media_dir(source: Path, target: Path, keep_source: bool):
+        """Move a media directory to `target`, or copy it when another run
+        still reads from `source`."""
+        if not source.exists():
+            return
+        target.parent.mkdir(parents=True, exist_ok=True)
+        if keep_source:
+            shutil.copytree(source, target)
+        else:
             shutil.move(str(source), str(target))
+
+    @staticmethod
+    def _media_prefix(media_dir: Path, project: str) -> str:
+        media_root = project_media_dir(project).parent
+        return f"{media_dir.relative_to(media_root).as_posix()}/"
 
     @staticmethod
     def rename_run(
@@ -3938,6 +3959,12 @@ class SQLiteStorage:
             raise ValueError("New run name cannot be empty")
 
         new_name = new_name.strip()
+        if any(
+            part in ("", ".", "..") for part in new_name.replace("\\", "/").split("/")
+        ):
+            raise ValueError(
+                f"Invalid run name '{new_name}': path components cannot be empty, '.' or '..'"
+            )
 
         db_path = SQLiteStorage.get_project_db_path(project)
         if not db_path.exists():
@@ -3988,19 +4015,19 @@ class SQLiteStorage:
                     metrics_rows = cursor.fetchall()
 
                     source_media = project_media_dir(project) / old_name
-                    target_media = project_media_dir(project) / new_name
-                    relocate_media = source_media.resolve() != target_media.resolve()
+                    target_media = SQLiteStorage._media_relocation_target(
+                        source_media, project_media_dir(project) / new_name
+                    )
                     shared_media = (
-                        SQLiteStorage._run_name_still_in_use(
+                        supports_run_ids
+                        and SQLiteStorage._run_name_still_in_use(
                             cursor, old_name, run_value
                         )
-                        if supports_run_ids
-                        else False
                     )
-                    if relocate_media and target_media.exists():
-                        target_media = target_media / uuid.uuid4().hex
-                    old_prefix = f"{source_media.relative_to(project_media_dir(project).parent).as_posix()}/"
-                    new_prefix = f"{target_media.relative_to(project_media_dir(project).parent).as_posix()}/"
+                    old_prefix = SQLiteStorage._media_prefix(source_media, project)
+                    new_prefix = SQLiteStorage._media_prefix(
+                        target_media or source_media, project
+                    )
 
                     updated_rows = []
                     for row in metrics_rows:
@@ -4134,14 +4161,12 @@ class SQLiteStorage:
                         except sqlite3.OperationalError:
                             pass
 
-                    conn.commit()
+                    if target_media is not None:
+                        SQLiteStorage._relocate_media_dir(
+                            source_media, target_media, keep_source=shared_media
+                        )
 
-                    if relocate_media and source_media.exists():
-                        target_media.parent.mkdir(parents=True, exist_ok=True)
-                        if shared_media:
-                            shutil.copytree(source_media, target_media)
-                        else:
-                            shutil.move(str(source_media), str(target_media))
+                    conn.commit()
                 except sqlite3.Error as e:
                     raise RuntimeError(
                         f"Database error while renaming run '{old_name}' to '{new_name}': {e}"
@@ -4296,8 +4321,20 @@ class SQLiteStorage:
                     with SQLiteStorage._get_connection(target_db_path) as target_conn:
                         target_cursor = target_conn.cursor()
 
-                        old_prefix = f"{project}/{run}/"
-                        new_prefix = f"{new_project}/{run}/"
+                        source_media = project_media_dir(project) / run
+                        target_media = SQLiteStorage._media_relocation_target(
+                            source_media, project_media_dir(new_project) / run
+                        )
+                        shared_media = (
+                            metrics_col == "run_id"
+                            and SQLiteStorage._run_name_still_in_use(
+                                source_cursor, run, metrics_val
+                            )
+                        )
+                        old_prefix = SQLiteStorage._media_prefix(source_media, project)
+                        new_prefix = SQLiteStorage._media_prefix(
+                            target_media or source_media, project
+                        )
                         target_metrics_run_id = SQLiteStorage._supports_run_ids(
                             target_conn, "metrics"
                         )
@@ -4537,10 +4574,10 @@ class SQLiteStorage:
 
                         target_conn.commit()
 
-                        SQLiteStorage._move_media_dir(
-                            project_media_dir(project) / run,
-                            project_media_dir(new_project) / run,
-                        )
+                        if target_media is not None:
+                            SQLiteStorage._relocate_media_dir(
+                                source_media, target_media, keep_source=shared_media
+                            )
 
                         source_cursor.execute(
                             f"DELETE FROM metrics WHERE {metrics_col} = ?",
