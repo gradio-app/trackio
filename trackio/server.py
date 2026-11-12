@@ -400,6 +400,7 @@ def check_hf_token_has_write_access(hf_token: str | None) -> None:
 
 _oauth_write_cache: dict[str, tuple[bool, float]] = {}
 _OAUTH_WRITE_CACHE_TTL = 300
+_ORG_ROLES_WITH_WRITE_ACCESS = frozenset({"write", "admin"})
 
 
 def check_oauth_token_has_write_access(oauth_token: str | None) -> None:
@@ -426,7 +427,10 @@ def check_oauth_token_has_write_access(oauth_token: str | None) -> None:
         _oauth_write_cache[oauth_token] = (True, now)
         return
     for org in who["orgs"]:
-        if org["name"] == owner_name and org["roleInOrg"] == "write":
+        if (
+            org.get("name") == owner_name
+            and org.get("roleInOrg") in _ORG_ROLES_WITH_WRITE_ACCESS
+        ):
             _oauth_write_cache[oauth_token] = (True, now)
             return
     _oauth_write_cache[oauth_token] = (False, now)
