@@ -222,6 +222,44 @@ def project_media_dir(project: str) -> Path:
     return MEDIA_DIR / canonical_project_name(project)
 
 
+def resolve_media_path(project: str, *parts: str | Path) -> Path:
+    """Resolve a media destination without creating it or escaping its project.
+
+    Relative nested paths are supported. Each appended part must remain within
+    its parent after resolving existing symlinks, including a final filename.
+    """
+    root = project_media_dir(project)
+    path = root
+    try:
+        for part in parts:
+            value = str(part)
+            segments = value.replace("\\", "/").split("/")
+            if (
+                not value
+                or "\x00" in value
+                or value[0] in "/\\"
+                or re.match(r"[A-Za-z]:[\\/]", value)
+                or (os.name == "nt" and ":" in value)
+                or any(
+                    segment == ".."
+                    or (segment not in ("", ".") and not segment.rstrip(" ."))
+                    for segment in segments
+                )
+            ):
+                raise ValueError(
+                    f"Invalid media path: {value!r}; expected a relative path without parent traversal"
+                )
+            candidate = path / value
+            if not candidate.resolve().is_relative_to(path.resolve()):
+                raise ValueError(f"Media path escapes its directory: {value!r}")
+            path = candidate
+        if path.resolve() == root.resolve():
+            raise ValueError("Media path must be inside the project directory")
+    except (OSError, RuntimeError) as e:
+        raise ValueError("Could not safely resolve media path") from e
+    return path
+
+
 def project_artifacts_dir(project: str) -> Path:
     return ARTIFACTS_DIR / canonical_project_name(project)
 

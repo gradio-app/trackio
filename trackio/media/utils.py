@@ -1,7 +1,7 @@
 import shutil
 from pathlib import Path
 
-from trackio.utils import project_media_dir
+from trackio.utils import resolve_media_path
 
 
 def check_path(file_path: str | Path) -> None:
@@ -47,14 +47,11 @@ def get_project_media_path(
     if step is not None and run is None:
         raise ValueError("Uploading files at a specific step requires a run")
 
-    path = project_media_dir(project)
-    if run:
-        path /= run
-        if step is not None:
-            path /= str(step)
-    else:
-        path /= "files"
-        if relative_path:
-            path /= relative_path
+    parts = [run] if run else ["files"]
+    if run and step is not None:
+        parts.append(str(step))
+    elif not run and relative_path:
+        parts.append(relative_path)
+    path = resolve_media_path(project, *parts)
     path.mkdir(parents=True, exist_ok=True)
     return path

@@ -45,6 +45,7 @@ from trackio.utils import (
     on_spaces,
     project_media_dir,
     project_trace_sessions_dir,
+    resolve_media_path,
     serialize_values,
     warn_dataset_persistence_deprecated,
 )
@@ -3959,12 +3960,11 @@ class SQLiteStorage:
             raise ValueError("New run name cannot be empty")
 
         new_name = new_name.strip()
-        if any(
-            part in ("", ".", "..") for part in new_name.replace("\\", "/").split("/")
-        ):
-            raise ValueError(
-                f"Invalid run name '{new_name}': path components cannot be empty, '.' or '..'"
-            )
+        target_dir = resolve_media_path(project, new_name)
+        try:
+            source_media = resolve_media_path(project, old_name)
+        except ValueError:
+            source_media = None
 
         db_path = SQLiteStorage.get_project_db_path(project)
         if not db_path.exists():
@@ -4014,9 +4014,12 @@ class SQLiteStorage:
                     )
                     metrics_rows = cursor.fetchall()
 
-                    source_media = project_media_dir(project) / old_name
-                    target_media = SQLiteStorage._media_relocation_target(
-                        source_media, project_media_dir(project) / new_name
+                    target_media = (
+                        None
+                        if source_media is None
+                        else SQLiteStorage._media_relocation_target(
+                            source_media, target_dir
+                        )
                     )
                     shared_media = (
                         supports_run_ids
@@ -4024,9 +4027,13 @@ class SQLiteStorage:
                             cursor, old_name, run_value
                         )
                     )
-                    old_prefix = SQLiteStorage._media_prefix(source_media, project)
                     new_prefix = SQLiteStorage._media_prefix(
-                        target_media or source_media, project
+                        target_media or target_dir, project
+                    )
+                    old_prefix = (
+                        new_prefix
+                        if target_media is None
+                        else SQLiteStorage._media_prefix(source_media, project)
                     )
 
                     updated_rows = []
@@ -4189,6 +4196,8 @@ class SQLiteStorage:
         Returns False without changing anything when both names resolve to the
         same project (see ``canonical_project_name``).
         """
+        source_media = resolve_media_path(project, run)
+        target_dir = resolve_media_path(new_project, run)
         if canonical_project_name(project) == canonical_project_name(new_project):
             return False
         source_db_path = SQLiteStorage.get_project_db_path(project)
@@ -4321,9 +4330,8 @@ class SQLiteStorage:
                     with SQLiteStorage._get_connection(target_db_path) as target_conn:
                         target_cursor = target_conn.cursor()
 
-                        source_media = project_media_dir(project) / run
                         target_media = SQLiteStorage._media_relocation_target(
-                            source_media, project_media_dir(new_project) / run
+                            source_media, target_dir
                         )
                         shared_media = (
                             metrics_col == "run_id"

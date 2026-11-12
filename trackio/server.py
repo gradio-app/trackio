@@ -625,15 +625,29 @@ def bulk_upload_media(
     assert_can_write_metrics(request, hf_token)
 
     def _write(upload: UploadEntry, src: Path) -> None:
-        media_path = get_project_media_path(
-            project=upload["project"],
-            run=upload["run"],
-            step=upload["step"],
-            relative_path=upload["relative_path"],
-        )
-        if upload["run"]:
-            media_path = media_path / _uploaded_file_media_basename(upload, src.name)
-        shutil.copy(src, media_path)
+        try:
+            media_path = get_project_media_path(
+                project=upload["project"],
+                run=upload["run"],
+                step=upload["step"],
+                relative_path=upload["relative_path"],
+            )
+            filename = (
+                _uploaded_file_media_basename(upload, src.name)
+                if upload["run"]
+                else src.name
+            )
+            destination = utils.resolve_media_path(
+                upload["project"],
+                media_path.relative_to(utils.project_media_dir(upload["project"])),
+                filename,
+            )
+            if destination.is_dir():
+                raise ValueError("Media destination must not be a directory")
+        except ValueError as e:
+            raise TrackioAPIError(str(e)) from e
+        shutil.copyfile(src, destination)
+        shutil.copymode(src, destination)
 
     _bulk_upload(request, uploads, _write)
 
