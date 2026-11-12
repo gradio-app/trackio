@@ -5,7 +5,7 @@ import secrets
 import time
 import warnings
 from datetime import datetime, timezone
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 from typing import TYPE_CHECKING, Any
 from urllib.parse import quote, urlencode
 
@@ -220,6 +220,47 @@ def canonical_project_name(project: str) -> str:
 
 def project_media_dir(project: str) -> Path:
     return MEDIA_DIR / canonical_project_name(project)
+
+
+def resolve_media_path(project: str, *parts: str | Path) -> Path:
+    """Resolve a media destination without creating it or escaping its project.
+
+    Relative nested paths are supported. Each appended part must remain within
+    its parent after resolving existing symlinks, including a final filename.
+    """
+    root = project_media_dir(project)
+    path = root
+    try:
+        if root.resolve() != MEDIA_DIR.resolve() / canonical_project_name(project):
+            raise ValueError(
+                "Project media directory must not redirect to another directory"
+            )
+        for part in parts:
+            value = str(part)
+            segments = value.replace("\\", "/").split("/")
+            if (
+                not value
+                or "\x00" in value
+                or ":" in value
+                or PureWindowsPath(value).anchor
+                or any(
+                    segment == ".."
+                    or (segment not in ("", ".") and not segment.rstrip(" ."))
+                    for segment in segments
+                )
+            ):
+                raise ValueError(
+                    f"Invalid media path: {value!r}; expected a relative path without parent traversal"
+                )
+            candidate = path / value
+            if not candidate.resolve().is_relative_to(path.resolve()):
+                raise ValueError(f"Media path escapes its directory: {value!r}")
+            path = candidate
+        if path.resolve() == root.resolve():
+            raise ValueError("Media path must be inside the project directory")
+    except (OSError, RuntimeError) as e:
+        raise ValueError("Could not safely resolve media path") from e
+    return path
 
 
 def project_artifacts_dir(project: str) -> Path:

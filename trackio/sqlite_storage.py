@@ -43,8 +43,8 @@ from trackio.utils import (
     deserialize_values,
     get_color_palette,
     on_spaces,
-    project_media_dir,
     project_trace_sessions_dir,
+    resolve_media_path,
     serialize_values,
     warn_dataset_persistence_deprecated,
 )
@@ -3938,6 +3938,8 @@ class SQLiteStorage:
             raise ValueError("New run name cannot be empty")
 
         new_name = new_name.strip()
+        source_media = resolve_media_path(project, old_name)
+        target_media = resolve_media_path(project, new_name)
 
         db_path = SQLiteStorage.get_project_db_path(project)
         if not db_path.exists():
@@ -4125,8 +4127,8 @@ class SQLiteStorage:
                     conn.commit()
 
                     SQLiteStorage._move_media_dir(
-                        project_media_dir(project) / old_name,
-                        project_media_dir(project) / new_name,
+                        source_media,
+                        target_media,
                     )
                 except sqlite3.Error as e:
                     raise RuntimeError(
@@ -4150,6 +4152,8 @@ class SQLiteStorage:
         Returns False without changing anything when both names resolve to the
         same project (see ``canonical_project_name``).
         """
+        source_media = resolve_media_path(project, run)
+        target_media = resolve_media_path(new_project, run)
         if canonical_project_name(project) == canonical_project_name(new_project):
             return False
         source_db_path = SQLiteStorage.get_project_db_path(project)
@@ -4524,8 +4528,8 @@ class SQLiteStorage:
                         target_conn.commit()
 
                         SQLiteStorage._move_media_dir(
-                            project_media_dir(project) / run,
-                            project_media_dir(new_project) / run,
+                            source_media,
+                            target_media,
                         )
 
                         source_cursor.execute(

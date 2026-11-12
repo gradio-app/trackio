@@ -1116,7 +1116,13 @@ def save(
                     step=None,
                     relative_path=str(relative_to_base),
                 )
-                shutil.copy(str(file_path), str(media_path))
+                destination = utils.resolve_media_path(
+                    project,
+                    media_path.relative_to(utils.project_media_dir(project)),
+                    file_path.name,
+                )
+                shutil.copyfile(str(file_path), str(destination))
+                shutil.copymode(str(file_path), str(destination))
     else:
         url = context_vars.current_server.get()
 

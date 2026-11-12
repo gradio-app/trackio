@@ -1157,7 +1157,13 @@ class Run:
         )
         src = Path(file_path)
         if src.exists() and str(src.resolve()) != str(Path(media_path).resolve()):
-            shutil.copy(str(src), str(media_path))
+            destination = utils.resolve_media_path(
+                self.project,
+                media_path.relative_to(utils.project_media_dir(self.project)),
+                src.name,
+            )
+            shutil.copyfile(str(src), str(destination))
+            shutil.copymode(str(src), str(destination))
 
     def _process_media(self, value: TrackioMedia, step: int | None) -> dict:
         value._save(self.project, self.name, step if step is not None else 0)
