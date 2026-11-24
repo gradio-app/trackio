@@ -59,6 +59,7 @@ class Run:
         write_token: str | None = None,
         existing_runs: list[str] | None = None,
         initial_last_step: int | None = None,
+        resumed_config: dict | None = None,
         auto_log_gpu: bool = False,
         gpu_log_interval: float = 10.0,
         auto_log_cpu: bool = False,
@@ -165,8 +166,16 @@ class Run:
                         f"Config key '{key}' is reserved (keys starting with '_' are reserved for internal use)"
                     )
 
+        resumed_config = resumed_config if isinstance(resumed_config, dict) else {}
+        if resumed_config:
+            self.config = {**resumed_config, **self.config}
+            if self.group is None:
+                self.group = resumed_config.get("_Group")
+
         self.config["_Username"] = self._get_username()
-        self.config["_Created"] = datetime.now(timezone.utc).isoformat()
+        self.config["_Created"] = (
+            resumed_config.get("_Created") or datetime.now(timezone.utc).isoformat()
+        )
         self.config["_Group"] = self.group
         try:
             command = get_launch_command()
