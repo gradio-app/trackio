@@ -1403,14 +1403,49 @@ def rename_run(
     return True
 
 
-def force_sync() -> bool:
+def assert_can_force_sync(request: Request, hf_token: str | None) -> None:
+    if not on_spaces():
+        if check_write_access(request, write_token):
+            return
+        raise TrackioAPIError(
+            "A write_token is required to trigger a sync on this server. "
+            "Use the write-access URL from trackio.show(), set TRACKIO_WRITE_TOKEN, "
+            "or send header X-Trackio-Write-Token."
+        )
+    if hf_token:
+        try:
+            check_hf_token_has_write_access(hf_token)
+        except PermissionError as e:
+            raise TrackioAPIError(str(e)) from e
+        return
+    oauth_token = _hf_access_token(request)
+    if oauth_token is not None:
+        try:
+            check_oauth_token_has_write_access(oauth_token)
+        except PermissionError as e:
+            raise TrackioAPIError(str(e)) from e
+        return
+    if check_write_access(request, write_token):
+        return
+    raise TrackioAPIError(
+        "Write access to this Space is required to trigger a sync. Pass a Hugging "
+        "Face token with write access, or sign in with Hugging Face."
+    )
+
+
+def force_sync(request: Request, hf_token: str | None = None) -> bool:
+    assert_can_force_sync(request, hf_token)
+    return run_force_sync()
+
+
+def run_force_sync() -> bool:
     try:
         import_inbox_once()
     except Exception as e:
         logger.warning("inbox fragment import during force_sync failed: %s", e)
     if os.environ.get("TRACKIO_BUCKET_ID"):
         return True
-    SQLiteStorage._dataset_import_attempted = True
+    SQLiteStorage._ensure_hub_loaded()
     SQLiteStorage.export_to_parquet()
     scheduler = SQLiteStorage.get_scheduler()
     scheduler.trigger().result()

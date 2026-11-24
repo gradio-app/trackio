@@ -1,6 +1,8 @@
 import secrets
 import time
 
+import huggingface_hub
+
 import trackio
 from trackio.remote_client import RemoteClient as Client
 from trackio.sqlite_storage import SQLiteStorage
@@ -197,7 +199,9 @@ def test_job_ends_before_space_is_available(test_space_id, temp_dir, monkeypatch
         "Expected buffered logs to be uploaded to the Bucket inbox at finish()"
     )
 
-    verify_client = Client(test_space_id, verbose=False)
+    verify_client = Client(
+        test_space_id, hf_token=huggingface_hub.get_token(), verbose=False
+    )
     summary = None
     deadline = time.time() + 90
     while time.time() < deadline:

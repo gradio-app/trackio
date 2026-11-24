@@ -284,6 +284,25 @@ def _store_gradio_call_result(
         d[event_id] = {"api_name": api_name, "data": data}
 
 
+def _is_json_request(request: Request) -> bool:
+    content_type = request.headers.get("content-type") or ""
+    return content_type.split(";", 1)[0].strip().lower() == "application/json"
+
+
+def _is_cross_site_capable_write(request: Request, api_name: str) -> bool:
+    """
+    Whether a write request could have been sent by another site on a signed-in
+    user's behalf. Browsers attach cookies to cross-site form and text/plain
+    posts without a preflight, but a JSON content type forces a preflight that
+    this server never approves, so cookie-bearing writes must be JSON.
+    """
+    if api_name not in request.app.state.write_apis:
+        return False
+    if not request.headers.get("cookie"):
+        return False
+    return not _is_json_request(request)
+
+
 async def run_api_request(request: Request, api_name: str) -> Response:
     api_registry = request.app.state.api_registry
     fn = api_registry.get(api_name)
@@ -291,6 +310,11 @@ async def run_api_request(request: Request, api_name: str) -> Response:
         return JSONResponse({"error": f"Unknown API: {api_name}"}, status_code=404)
     if api_name in request.app.state.write_apis and utils.writes_paused():
         return JSONResponse({"error": utils.WRITES_PAUSED_MESSAGE}, status_code=503)
+    if _is_cross_site_capable_write(request, api_name):
+        return JSONResponse(
+            {"error": "Requests to this API must use Content-Type: application/json."},
+            status_code=415,
+        )
 
     try:
         body = await request.json()

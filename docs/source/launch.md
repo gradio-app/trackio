@@ -89,6 +89,8 @@ The currently available HTTP endpoints are:
 - `POST /api/force_sync`
 - `POST /api/upload` for multipart file uploads used by media and file-related flows
 
+Endpoints that change data (logging, uploads, `delete_run`, `rename_run`, and `force_sync`) require write access: a write token locally, or a Hugging Face token or sign-in with write access on Spaces. Send their bodies as `Content-Type: application/json`; a write request that carries cookies with any other content type is rejected with `415`.
+
 For reading stored files returned by the API, Trackio also serves `GET /file?path=...`.
 
 <hfoptions id="language">

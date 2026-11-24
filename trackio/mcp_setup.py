@@ -168,7 +168,7 @@ def create_mcp_integration() -> tuple[list[Any], Any]:
     ) -> bool:
         with reported_to_client():
             _assert_mcp_mutation_access(hf_token=hf_token, write_token=write_token)
-        return trackio_server.force_sync()
+        return trackio_server.run_force_sync()
 
     mcp_app = mcp.streamable_http_app(**http_app_kwargs)
 
