@@ -1,0 +1,6 @@
+name = "lean_claims"
+defaultTargets = ["LeanClaims"]
+
+[[lean_lib]]
+name = "LeanClaims"
+roots = ["Trackio", "PaperTables", "AttentionAblation", "Claims"]

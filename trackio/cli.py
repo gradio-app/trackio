@@ -44,6 +44,7 @@ from trackio.frontend_config import (
     set_persisted_frontend_dir,
     unset_persisted_frontend_dir,
 )
+from trackio.lean_export import write_lean_export
 from trackio.markdown import Markdown
 from trackio.registry_storage import parse_collection_target
 from trackio.remote_client import RemoteClient
@@ -388,6 +389,22 @@ def _handle_query(args):
         print(format_json(result))
     else:
         print(format_query_result(result))
+
+
+def _handle_export(args):
+    metrics = (
+        [m.strip() for m in args.metrics.split(",") if m.strip()]
+        if args.metrics
+        else None
+    )
+    try:
+        module_path, prelude_path = write_lean_export(
+            args.project, args.output, metrics=metrics, exact=args.exact
+        )
+    except ValueError as e:
+        error_exit(str(e))
+    print(f"Wrote {module_path}")
+    print(f"Wrote {prelude_path}")
 
 
 def _datetime_to_iso(value):
@@ -1432,6 +1449,32 @@ def main():
         help="Output in JSON format",
     )
 
+    export_parser = subparsers.add_parser(
+        "export",
+        help="Export a project's logged data in another format",
+    )
+    export_parser.add_argument("--project", required=True, help="Project name")
+    export_parser.add_argument(
+        "--format",
+        required=True,
+        choices=["lean"],
+        help="Export format. 'lean' writes a Lean 4 module for proving claims about the data.",
+    )
+    export_parser.add_argument(
+        "--output",
+        required=True,
+        help="Output .lean file, or a directory to write <ProjectName>.lean into. Trackio.lean is written alongside.",
+    )
+    export_parser.add_argument(
+        "--metrics",
+        help="Comma-separated metric names to export (default: all numeric metrics)",
+    )
+    export_parser.add_argument(
+        "--exact",
+        action="store_true",
+        help="Export each float as its exact binary value instead of its shortest round-trip decimal",
+    )
+
     query_parser = subparsers.add_parser(
         "query",
         help="Run a read-only SQL query against a project database",
@@ -1905,6 +1948,7 @@ def main():
         "freeze",
         "skills",
         "registry",
+        "export",
     ) and _get_space(args):
         error_exit(
             f"The '{args.command}' command does not support --space (remote mode)."
@@ -2483,6 +2527,8 @@ def main():
                     if idx < len(reports):
                         output.append("-" * 80)
                 print("\n".join(output))
+    elif args.command == "export":
+        _handle_export(args)
     elif args.command == "query":
         if args.query_type == "project":
             _handle_query(args)
