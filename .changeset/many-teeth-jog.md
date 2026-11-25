@@ -2,4 +2,4 @@
 "trackio": minor
 ---
 
-feat:Add `trackio export --format lean` for proving claims about logged runs
+feat:Add `trackio export --format lean` and code provenance (`trackio verify`)
