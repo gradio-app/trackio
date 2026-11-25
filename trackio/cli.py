@@ -44,7 +44,9 @@ from trackio.frontend_config import (
     set_persisted_frontend_dir,
     unset_persisted_frontend_dir,
 )
+from trackio.lean_export import write_lean_export
 from trackio.markdown import Markdown
+from trackio.provenance import verify_project_code
 from trackio.registry_storage import parse_collection_target
 from trackio.remote_client import RemoteClient
 from trackio.server import get_project_summary, get_run_summary
@@ -388,6 +390,61 @@ def _handle_query(args):
         print(format_json(result))
     else:
         print(format_query_result(result))
+
+
+def _handle_verify(args):
+    records = SQLiteStorage.get_run_records(args.project)
+    if not records:
+        error_exit(f"Project '{args.project}' has no runs.")
+    configs = SQLiteStorage.get_all_run_configs(args.project)
+    by_run = {}
+    for record in records:
+        name = record["name"] or record["id"]
+        if args.run and name != args.run:
+            continue
+        by_run[name] = configs.get(record["id"]) or configs.get(record["name"]) or {}
+    if args.run and not by_run:
+        error_exit(f"Run '{args.run}' not found in project '{args.project}'.")
+    rows = verify_project_code(
+        args.project, by_run, files=args.file, check_jobs=not args.no_jobs
+    )
+    if args.json:
+        print(format_json({"project": args.project, "runs": rows}))
+    else:
+        for row in rows:
+            status = "OK  " if row["ok"] else "FAIL"
+            sha = (row["recorded_sha256"] or "none")[:19]
+            n = len(row["recorded_files"])
+            checks = [f"{n} file{'s' if n != 1 else ''} recorded"]
+            if row.get("matches_local"):
+                checks.append("local files match")
+            if row.get("matches_executed"):
+                checks.append(
+                    f"job {row['job_id']} ({row.get('job_status')}) ran this code"
+                )
+            checks += row["problems"]
+            print(
+                f"{status} {row['run']}: {row['script'] or '-'} {sha}  "
+                + "; ".join(checks)
+            )
+    if not all(row["ok"] for row in rows):
+        sys.exit(1)
+
+
+def _handle_export(args):
+    metrics = (
+        [m.strip() for m in args.metrics.split(",") if m.strip()]
+        if args.metrics
+        else None
+    )
+    try:
+        module_path, prelude_path = write_lean_export(
+            args.project, args.output, metrics=metrics, exact=args.exact
+        )
+    except ValueError as e:
+        error_exit(str(e))
+    print(f"Wrote {module_path}")
+    print(f"Wrote {prelude_path}")
 
 
 def _datetime_to_iso(value):
@@ -1432,6 +1489,52 @@ def main():
         help="Output in JSON format",
     )
 
+    verify_parser = subparsers.add_parser(
+        "verify",
+        help="Check that each run's recorded code matches a local file and, for runs on Hugging Face Jobs, the script the Job executed",
+    )
+    verify_parser.add_argument("--project", required=True, help="Project name")
+    verify_parser.add_argument("--run", help="Only verify this run")
+    verify_parser.add_argument(
+        "--file",
+        action="append",
+        help="Local file to compare, by name, against each run's recorded hashes (repeatable: the script and the modules it imports)",
+    )
+    verify_parser.add_argument(
+        "--no-jobs",
+        action="store_true",
+        help="Skip fetching the executed script from Hugging Face Jobs",
+    )
+    verify_parser.add_argument(
+        "--json", action="store_true", help="Output in JSON format"
+    )
+
+    export_parser = subparsers.add_parser(
+        "export",
+        help="Export a project's logged data in another format",
+    )
+    export_parser.add_argument("--project", required=True, help="Project name")
+    export_parser.add_argument(
+        "--format",
+        required=True,
+        choices=["lean"],
+        help="Export format. 'lean' writes a Lean 4 module for proving claims about the data.",
+    )
+    export_parser.add_argument(
+        "--output",
+        required=True,
+        help="Output .lean file, or a directory to write <ProjectName>.lean into. Trackio.lean is written alongside.",
+    )
+    export_parser.add_argument(
+        "--metrics",
+        help="Comma-separated metric names or glob patterns, e.g. 'dev/*,probe/*' (default: all numeric metrics)",
+    )
+    export_parser.add_argument(
+        "--exact",
+        action="store_true",
+        help="Export each float as its exact binary value instead of its shortest round-trip decimal",
+    )
+
     query_parser = subparsers.add_parser(
         "query",
         help="Run a read-only SQL query against a project database",
@@ -1905,6 +2008,8 @@ def main():
         "freeze",
         "skills",
         "registry",
+        "export",
+        "verify",
     ) and _get_space(args):
         error_exit(
             f"The '{args.command}' command does not support --space (remote mode)."
@@ -2483,6 +2588,10 @@ def main():
                     if idx < len(reports):
                         output.append("-" * 80)
                 print("\n".join(output))
+    elif args.command == "verify":
+        _handle_verify(args)
+    elif args.command == "export":
+        _handle_export(args)
     elif args.command == "query":
         if args.query_type == "project":
             _handle_query(args)
