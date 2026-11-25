@@ -188,6 +188,7 @@ class Run:
         self._queued_alerts: list[AlertEntry] = []
         self._sending_batch: list[_PendingBatch] | None = None
         self._stop_flag = threading.Event()
+        self._sender_abandoned = threading.Event()
         self._config_logged = False
         max_step = self._safe_get_max_step_for_run()
         self._next_step = 0 if max_step is None else max_step + 1
@@ -553,7 +554,7 @@ class Run:
 
     def _batch_sender(self):
         consecutive_failures = 0
-        while (
+        while not self._sender_abandoned.is_set() and (
             not self._stop_flag.is_set()
             or len(self._queued_logs) > 0
             or len(self._queued_system_logs) > 0
@@ -569,8 +570,9 @@ class Run:
                 else:
                     sleep_time = BATCH_SEND_INTERVAL
                 self._stop_flag.wait(timeout=sleep_time)
-            elif self._has_local_buffer:
-                self._stop_flag.wait(timeout=BATCH_SEND_INTERVAL)
+            elif self._has_local_buffer or consecutive_failures:
+                if self._sender_abandoned.wait(timeout=BATCH_SEND_INTERVAL):
+                    return
             try:
                 with self._client_lock:
                     if self._client is None:
@@ -1935,6 +1937,7 @@ class Run:
                     else:
                         self._client_thread.join(timeout=5)
                     if self._client_thread.is_alive():
+                        self._sender_abandoned.set()
                         self._flush_queues_inline()
                         if client_connected or self._bucket_id is None:
                             _emit_nonfatal_warning(

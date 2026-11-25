@@ -137,9 +137,31 @@ _spaces_created_this_session: set[str] = set()
 _projects_notified_auto_log_hw: set[str] = set()
 
 
+_active_runs: list[Run] = []
+_active_runs_lock = threading.Lock()
+
+
+def _register_active_run(run: Run) -> None:
+    """
+    Remembers a run until it is finished, so the exit hook can still find it
+    when `init()` ran in another thread or inside `asyncio.run()`, where the
+    `current_run` context variable is no longer visible at exit.
+    """
+    with _active_runs_lock:
+        _active_runs[:] = [r for r in _active_runs if not r._stop_flag.is_set()]
+        _active_runs.append(run)
+
+
 def _cleanup_current_run():
-    run = context_vars.current_run.get()
-    if run is not None:
+    with _active_runs_lock:
+        runs = list(_active_runs)
+        _active_runs.clear()
+    current = context_vars.current_run.get()
+    if current is not None and all(current is not run for run in runs):
+        runs.append(current)
+    for run in runs:
+        if run._stop_flag.is_set():
+            continue
         try:
             run.finish()
         except Exception:
@@ -731,6 +753,7 @@ def init(
         print(f"* Created new run: {run.name}")
 
     context_vars.current_run.set(run)
+    _register_active_run(run)
     globals()["config"] = run.config
 
     # NOTE: trackio.init() deliberately does NOT mutate any logbook that happens
