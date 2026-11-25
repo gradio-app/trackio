@@ -17,6 +17,7 @@ with `exact=True` it becomes the float64's exact binary value.
 
 from __future__ import annotations
 
+import fnmatch
 import hashlib
 import json
 import math
@@ -125,6 +126,7 @@ class _ExportedRun:
     ident: str
     series: dict[str, list[tuple[int, Fraction]]] = field(default_factory=dict)
     config: dict[str, Any] = field(default_factory=dict)
+    provenance: dict[str, str] = field(default_factory=dict)
 
 
 def _is_finite_number(value: Any) -> bool:
@@ -227,7 +229,7 @@ def _collect_runs(
     if not records:
         raise ValueError(f"Project '{project}' has no runs to export.")
     configs = SQLiteStorage.get_all_run_configs(project)
-    wanted = set(metrics) if metrics else None
+    wanted = list(metrics) if metrics else None
     used_idents: set[str] = set()
     skipped = 0
     runs: list[_ExportedRun] = []
@@ -240,7 +242,9 @@ def _collect_runs(
             for key, value in log.items():
                 if key in ("step", "timestamp") or key.startswith("_"):
                     continue
-                if wanted is not None and key not in wanted:
+                if wanted is not None and not any(
+                    fnmatch.fnmatchcase(key, pattern) for pattern in wanted
+                ):
                     continue
                 if isinstance(value, float) and not math.isfinite(value):
                     skipped += 1
@@ -252,6 +256,15 @@ def _collect_runs(
                 )
         raw_config = configs.get(record["id"]) or configs.get(record["name"]) or {}
         run.config = _flatten_config(raw_config)
+        code = raw_config.get("_Code") or {}
+        job = raw_config.get("_Job") or {}
+        for key, value in (
+            ("codeSha256", code.get("sha256")),
+            ("codePath", code.get("path")),
+            ("hfJobId", job.get("id")),
+        ):
+            if isinstance(value, str):
+                run.provenance[key] = value
         runs.append(run)
     return runs, skipped
 
@@ -267,6 +280,7 @@ def _digest(project: str, runs: list[_ExportedRun], exact: bool) -> str:
                     key: _config_value(value, exact)
                     for key, value in sorted(run.config.items())
                 },
+                "provenance": dict(sorted(run.provenance.items())),
                 "series": {
                     metric: [
                         [step, f"{value.numerator}/{value.denominator}"]
@@ -392,6 +406,24 @@ def export_project_to_lean(
             "def cfg (r : Run) (k : Key) : Option Q := (config r k).bind Value.num?",
             "",
         ]
+
+    provenance_keys = sorted({k for run in runs for k in run.provenance})
+    provenance_docs = {
+        "codeSha256": "SHA-256 of the entry script that produced each run, recorded by `trackio.init`.",
+        "codePath": "File name of the entry script that produced each run.",
+        "hfJobId": "Hugging Face Job each run ran in, if any.",
+    }
+    for key in provenance_keys:
+        cases = [
+            f"  | .{run.ident} => some {_lean_string(run.provenance[key])}"
+            for run in runs
+            if key in run.provenance
+        ]
+        lines += [f"/-- {provenance_docs[key]} -/", f"def {key} : Run → Option String"]
+        lines += cases
+        if len(cases) < len(runs):
+            lines.append("  | _ => none")
+        lines.append("")
 
     lines += [f"end {module}", ""]
     return "\n".join(lines)

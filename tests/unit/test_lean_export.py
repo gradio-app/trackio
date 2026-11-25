@@ -72,6 +72,15 @@ def test_export_filters_metrics_and_supports_exact_floats(temp_dir):
     assert "  | _, _ => []" not in source
 
 
+def test_export_metric_globs(temp_dir):
+    _log_ablation()
+
+    source = export_project_to_lean("toy-ablation", metrics=["dev/*"])
+
+    assert "  | dev_bleu\n" in source
+    assert "| loss" not in source
+
+
 def test_digest_tracks_logged_values(temp_dir):
     _log_ablation()
     before = export_project_to_lean("toy-ablation")
@@ -84,6 +93,28 @@ def test_digest_tracks_logged_values(temp_dir):
     digest = [line for line in before.splitlines() if line.startswith("def digest")]
     assert digest and digest[0] not in after
     assert export_project_to_lean("toy-ablation") == after
+
+
+def test_export_includes_code_provenance(temp_dir):
+    _log_ablation()
+    SQLiteStorage.bulk_log(
+        project="toy-ablation",
+        run="from-job",
+        metrics_list=[{"dev/bleu": 20.0}],
+        steps=[0],
+        config={
+            "heads": 2,
+            "_Code": {"path": "train.py", "sha256": "sha256:abc"},
+            "_Job": {"id": "job42", "owner": "someone"},
+        },
+    )
+
+    source = export_project_to_lean("toy-ablation")
+
+    assert "def codeSha256 : Run → Option String" in source
+    assert '  | .from_job => some "sha256:abc"' in source
+    assert '  | .from_job => some "job42"' in source
+    assert "  | _ => none" in source.split("def codeSha256")[1]
 
 
 def test_export_of_missing_project_raises(temp_dir):

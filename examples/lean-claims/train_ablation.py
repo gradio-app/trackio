@@ -1,3 +1,7 @@
+# /// script
+# requires-python = ">=3.10"
+# dependencies = ["torch", "sacrebleu", "datasets", "tokenizers"]
+# ///
 """Rerun Table 3 rows (A), (B) and the label-smoothing rows of (D) from
 "Attention Is All You Need" at small scale, logging every run to Trackio.
 
@@ -17,12 +21,21 @@ Then export and check the claims:
         --metrics model/params,dev/bleu,dev/ppl,dev/loss,test/bleu \\
         --output examples/lean-claims/AttentionAblation.lean
     cd examples/lean-claims && lake build
+
+Each run also logs an attention probe at step 0: the model's own
+MultiHeadAttention class run on fixed, exactly representable weights and
+inputs (see `attention_probe`), so Lean can recompute the paper's attention on
+the same probe and check the logged outputs against it.
+
+To run on Hugging Face Jobs, see `run_on_hf_jobs.py`.
 """
 
 import argparse
 import math
 import os
 import random
+import subprocess
+import sys
 import time
 from pathlib import Path
 
@@ -37,6 +50,10 @@ from tokenizers import SentencePieceBPETokenizer, Tokenizer  # noqa: E402
 from torch import nn  # noqa: E402
 
 import trackio  # noqa: E402
+from trackio.bucket_storage import (  # noqa: E402
+    create_bucket_if_not_exists,
+    upload_project_to_bucket,
+)
 
 PROJECT = "attention-ablation"
 PAD, BOS, EOS, UNK = 0, 1, 2, 3
@@ -112,6 +129,53 @@ def pad(seqs, device):
     for i, s in enumerate(seqs):
         out[i, : len(s)] = torch.tensor(s)
     return out.to(device)
+
+
+def causal_mask(length, device):
+    return torch.ones(length, length, dtype=torch.bool, device=device).tril()
+
+
+PROBE = {"d_model": 4, "h": 2, "d_k": 4, "d_v": 2, "length": 3}
+
+
+def probe_weight(row: int, col: int, salt: int) -> float:
+    return (((3 * row + 2 * col + salt) % 5) - 2) / 8
+
+
+def probe_input(t: int, c: int) -> float:
+    return (((2 * t + 3 * c) % 5) - 2) / 2
+
+
+@torch.no_grad()
+def attention_probe(device):
+    p = PROBE
+    attn = MultiHeadAttention(p["d_model"], p["h"], p["d_k"], p["d_v"]).to(device)
+    for salt, linear in enumerate([attn.w_q, attn.w_k, attn.w_v, attn.w_o], start=1):
+        rows, cols = linear.weight.shape
+        linear.weight.copy_(
+            torch.tensor(
+                [[probe_weight(r, c, salt) for c in range(cols)] for r in range(rows)]
+            )
+        )
+    x = torch.tensor(
+        [
+            [
+                [probe_input(t, c) for c in range(p["d_model"])]
+                for t in range(p["length"])
+            ]
+        ],
+        device=device,
+    )
+    outputs = {
+        "self": attn(x, x, None),
+        "causal": attn(x, x, causal_mask(p["length"], device)[None, None]),
+    }
+    return {
+        f"probe/{kind}/t{t}_c{c}": out[0, t, c].item()
+        for kind, out in outputs.items()
+        for t in range(p["length"])
+        for c in range(p["d_model"])
+    }
 
 
 class MultiHeadAttention(nn.Module):
@@ -205,7 +269,7 @@ class Transformer(nn.Module):
 
     def decode(self, tgt, memory, src_mask):
         length = tgt.shape[1]
-        causal = torch.ones(length, length, dtype=torch.bool, device=tgt.device).tril()
+        causal = causal_mask(length, tgt.device)
         y = self.embed_tokens(tgt)
         for layer in self.decoder:
             y = layer(y, memory, causal[None, None], src_mask)
@@ -292,7 +356,7 @@ def train_run(variant, seed, data, tokenizer, args, device):
             "device": str(device),
         },
     )
-    trackio.log({"model/params": params}, step=0)
+    trackio.log({"model/params": params, **attention_probe(device)}, step=0)
     step, window_tokens, window_start = 0, 0, time.perf_counter()
     for epoch in range(1, args.epochs + 1):
         for ids in batches(data["train"], args.batch_tokens, True, rng):
@@ -359,8 +423,84 @@ def main():
     parser.add_argument("--warmup", type=int, default=400)
     parser.add_argument("--lr-factor", type=float, default=1.0)
     parser.add_argument("--vocab-size", type=int, default=8000)
+    parser.add_argument("--cache-dir", default=str(HERE / ".cache"))
+    parser.add_argument(
+        "--workers",
+        type=int,
+        default=1,
+        help="Train this many seeds at once, each in its own process",
+    )
+    parser.add_argument(
+        "--upload-bucket",
+        help="After training, upload the project's database to this HF bucket",
+    )
+    parser.add_argument(
+        "--trackio-wheel",
+        help="Trackio wheel the HF Job installed (set by run_on_hf_jobs.py; not used here)",
+    )
+    parser.add_argument(
+        "--static-space",
+        help="After training, publish the project to this static Trackio Space",
+    )
     args = parser.parse_args()
 
+    if args.workers > 1 and len(args.seeds) > 1:
+        run_seeds_in_parallel(args)
+    else:
+        train_all(args)
+    if args.upload_bucket:
+        create_bucket_if_not_exists(args.upload_bucket, private=False)
+        upload_project_to_bucket(args.project, args.upload_bucket)
+        print(f"Uploaded {args.project} to hf://buckets/{args.upload_bucket}")
+    if args.static_space:
+        trackio.sync(project=args.project, space_id=args.static_space, sdk="static")
+
+
+def run_seeds_in_parallel(args):
+    shared = [
+        "--project",
+        args.project,
+        f"--run-suffix={args.run_suffix}",
+        "--variants",
+        *args.variants,
+        "--epochs",
+        str(args.epochs),
+        "--bleu-every",
+        str(args.bleu_every),
+        "--batch-tokens",
+        str(args.batch_tokens),
+        "--warmup",
+        str(args.warmup),
+        "--lr-factor",
+        str(args.lr_factor),
+        "--vocab-size",
+        str(args.vocab_size),
+        "--cache-dir",
+        args.cache_dir,
+    ]
+    pending = list(args.seeds)
+    running = []
+    while pending or running:
+        while pending and len(running) < args.workers:
+            seed = pending.pop(0)
+            cmd = [
+                sys.executable,
+                os.path.abspath(__file__),
+                *shared,
+                "--seeds",
+                str(seed),
+            ]
+            running.append(subprocess.Popen(cmd))
+            time.sleep(5)
+        for proc in list(running):
+            if proc.poll() is not None:
+                running.remove(proc)
+                if proc.returncode != 0:
+                    raise SystemExit(f"Seed worker failed: {' '.join(proc.args)}")
+        time.sleep(2)
+
+
+def train_all(args):
     device = torch.device(
         "mps"
         if torch.backends.mps.is_available()
@@ -369,7 +509,7 @@ def main():
         else "cpu"
     )
     ds = load_dataset("bentrevett/multi30k")
-    tokenizer = build_tokenizer(ds["train"], args.vocab_size, HERE / ".cache")
+    tokenizer = build_tokenizer(ds["train"], args.vocab_size, Path(args.cache_dir))
     data = {
         "train": encode(tokenizer, ds["train"]),
         "dev": encode(tokenizer, ds["validation"]),

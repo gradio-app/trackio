@@ -1,84 +1,98 @@
-# Checking "Attention Is All You Need" with Trackio and Lean
+# Verifying "Attention Is All You Need" with Trackio and Lean
 
-Two Lean files, built together with `lake build`:
+Claims in an empirical paper rest on three things. This example checks each one:
 
-| File | Checks | Data |
+| Layer | Question | How it's checked |
 | --- | --- | --- |
-| `PaperTables.lean` | The paper's text and arithmetic against its own Tables 2–3 | Numbers transcribed from arXiv:1706.03762v7 |
-| `Claims.lean` | The paper's Table 3 sentences against a real rerun | `AttentionAblation.lean`, exported from Trackio |
+| Method | Does the code implement the paper? | `Spec.lean` encodes Sections 3 and 5.3. The code logs facts about itself to Trackio, and `Conformance.lean` proves they match the spec. |
+| Provenance | Did that code produce these logs? | `trackio.init` records the script's SHA-256 and the HF Job. `trackio verify` matches it against the repo and against the script HF Jobs ran. |
+| Conclusions | Do the paper's sentences follow from the results? | `Claims.lean` proves each Table 3 sentence, or its negation, from the logs exported by `trackio export --format lean`. |
 
-If a claim doesn't follow from its data, the build fails.
+`PaperTables.lean` also checks the paper's text against its own tables. `lake build`
+checks all of it in about 3 seconds with Lean 4.36 and no Mathlib. A false claim, a
+changed number, or non-conforming code fails the build.
 
 ## Reproduce
 
 ```bash
-pip install torch sacrebleu datasets tokenizers
-python examples/lean-claims/train_ablation.py --variants base h1 dk8 ls0 --seeds 0 1
+# Train on HF Jobs (12 runs, ~11 minutes on an A10G)
+uv build --wheel -o dist
+python examples/lean-claims/run_on_hf_jobs.py --trackio-wheel dist/trackio-*.whl \
+    --bucket <user>/attention-ablation-data --space <user>/attention-ablation
+
+# Fetch the logs, check provenance, export, prove
+python -c "from trackio.bucket_storage import download_bucket_to_trackio_dir as d; d('<user>/attention-ablation-data')"
+trackio verify --project attention-ablation --file examples/lean-claims/train_ablation.py
 trackio export --project attention-ablation --format lean \
-    --metrics model/params,dev/bleu,dev/ppl,test/bleu \
+    --metrics "model/params,dev/*,test/bleu,train/lr,probe/*" \
     --output examples/lean-claims/AttentionAblation.lean
 cd examples/lean-claims && lake build
 ```
 
-Training logs to `examples/lean-claims/.trackio/`; set `TRACKIO_DIR` to override.
-Each run is the paper's architecture, implemented from scratch (post-LN encoder-decoder,
-sinusoidal positions, one shared embedding/softmax matrix, Adam with β₂ = 0.98 and
-inverse-sqrt warmup, label smoothing). It uses N = 3, d_model = 256 and d_ff = 1024,
-trained for 10 epochs on Multi30k EN→DE. That's about 8 minutes per run on an Apple
-M5. Each run logs training loss, learning rate, throughput, dev loss and perplexity
-every epoch, dev BLEU every 5 epochs, test BLEU, and the parameter count. The learning
-rate was tuned on the base config only, in a separate `attention-ablation-lr-pilot`
-project.
+`train_ablation.py` also runs locally: `python examples/lean-claims/train_ablation.py
+--variants base h1 dk8 ls0 --seeds 0 1 2`.
 
-## What the proofs found
+## Method: conformance to the spec (`Spec.lean`, `Conformance.lean`)
 
-**In the paper itself** (`PaperTables.lean`):
+- **Learning rate (Section 5.3).** Every logged learning rate matches
+  `d_model^-0.5 · min(n^-0.5, n · warmup^-1.5)` to 10⁻⁹. The check is done on the
+  squared schedule, so it's exact rational arithmetic.
+- **Attention (Section 3.2).** Each run passes its real `MultiHeadAttention` (and the
+  decoder's causal mask) through a fixed probe with exactly representable weights and
+  logs the 24 outputs. `Spec.lean` computes the paper's `softmax(QKᵀ/√d_k)V`,
+  multi-head concat and projection in exact rationals, enclosing `exp` in proven
+  bounds (a Taylor sum plus a Lagrange remainder). All logged outputs are within 10⁻⁶.
+- **Parameters.** Every model's logged count equals the architecture formula.
 
-- No vocabulary size makes Table 3's params column consistent with the architecture
-  in Section 3. The ten base-sized rows agree with each other only for V between 41004
-  and 41208 (the text says "about 37000"). The big model's 213M needs V of about 36K.
-  The proof is over all `V : Nat`. The same formula reproduces all eight real models'
-  parameter counts exactly (`Claims.params_match_formula`).
-- "More than 2.0 BLEU" over the best prior EN-DE result rests on 28.4 − 26.36 = 2.04.
-  An unrounded 28.36 would print as 28.4 and give exactly 2.0.
-- Section 6.1 gives EN-FR big as 41.0; Table 2 and the abstract give 41.8.
-- "Bigger models are better" (row C) fails for depth in BLEU (N = 8 scores below N = 6).
-  Read as "more parameters is better", it also fails in perplexity.
-- The FLOPs in Table 2 follow from the stated formula with 12 h and 3.5 days. The
-  0.4 s step time in Section 5.2 implies 11.1 h, which would print as 3.0·10¹⁸.
+Planted bugs, each run for real, fail the matching theorem:
 
-**In the rerun** (`Claims.lean`, 2 seeds per variant):
+| Bug | Caught by |
+| --- | --- |
+| Scale by 1/d_k instead of 1/√d_k | `attention_matches_paper` |
+| Concatenate heads without the transpose | `attention_matches_paper` |
+| Drop the decoder's causal mask (dev perplexity *improves*, 23 vs ~105) | `attention_matches_paper` |
+| Warmup exponent −1.25 instead of −1.5 | `lr_schedule_matches_paper` |
+
+These are tests on the probe, not proofs about the code for every input.
+
+## Provenance (`trackio verify`)
+
+```
+OK   base-s0: train_ablation.py sha256:9df1c0b71099  local file matches; job 6b062a43d0582cfbbefd4b26 (COMPLETED) ran this code
+```
+
+Trackio downloads the script HF Jobs executed from the job's `jobs-artifacts` bucket,
+independently of what the run recorded. This trusts HF Jobs' records, and only the job
+owner can read that bucket.
+
+## Conclusions (`Claims.lean`, 3 seeds, Multi30k, 7.6M parameters)
 
 | Paper's sentence | Perplexity | BLEU |
 | --- | --- | --- |
-| One head is worse than the best | holds, every seed | does not hold on average |
-| Reducing d_k hurts | holds, every seed | reversed, every seed |
-| Label smoothing hurts perplexity, helps BLEU | reversed, every seed | holds on average, not every seed |
+| One head is 0.9 BLEU worse | worse on every seed | worse on every seed, but by 0.2, not significant |
+| Reducing d_k hurts | worse on every seed | worse on average, not every seed |
+| Label smoothing hurts perplexity, helps BLEU | **reversed**: helps perplexity on every seed, significant | helps on average, not every seed, not significant |
 
-The two base seeds differ by 0.47 dev BLEU, more than the paper's row (B) effect
-(0.4). None of the differences, including the largest, is significant with two seeds.
-Table 3 reports one run per configuration.
+The three base seeds span 2.2 dev BLEU, more than twice the largest row (A)/(B) effect
+the paper reports. Table 3 has one run per configuration.
 
-## How a claim reads
+## The paper against itself (`PaperTables.lean`)
 
-```lean
-theorem small_key_better_bleu_every_seed :
-    holds (everySeed base smallKey .dev_bleu fun b k => decide (b < k)) := by
-  decide
-```
+- No vocabulary size makes Table 3's parameter column consistent with Section 3's
+  architecture. The base-sized rows need 41,004–41,208 tokens; the big model needs
+  about 36K; the text says about 37K. The proof covers every `V : Nat`.
+- "More than 2.0 BLEU" (Section 6.1) isn't implied by the rounded table.
+- Section 6.1 says 41.0 BLEU on EN-FR; Table 2 says 41.8.
+- "Bigger models are better" fails for depth in BLEU.
 
-- Logged floats become exact rationals (the shortest decimal that round-trips to the
-  float64, or its exact binary value with `--exact`). No floating-point slack.
-- A missing run, metric or config key makes the computation `none`, and `holds none` is
-  false. Missing data can't make a claim succeed.
-- `decide` evaluates the claim in the Lean kernel. `#print axioms` shows only Lean's
-  standard axioms: no `sorry` and no `native_decide`.
-- `digest` ties the module to the logs. Re-export and compare it to confirm the module
-  wasn't edited.
+## What is still trusted
 
-## What this does not establish
+1. The translation of the paper's text into `Spec.lean` and the claim statements,
+   which people review.
+2. HF Jobs' record of what it ran.
+3. That conformance on the probe reflects the code's behavior in training.
+4. The t-table critical values.
 
-Lean proves claims follow from logged numbers. It doesn't prove the numbers came from
-the training the config describes. It doesn't check that a test-statistic critical
-value (taken from a t-table) is right. And it doesn't make small-scale results speak
-for the paper's scale.
+`#print axioms` shows no `sorry` and no `native_decide`. Kernel checks use
+`decide +kernel`; when one is false, Lean reports it as "application type mismatch" on
+that theorem.

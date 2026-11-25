@@ -10,7 +10,7 @@ from typing import Any
 import huggingface_hub
 import orjson
 
-from trackio import cas, fragments, references, utils
+from trackio import cas, fragments, provenance, references, utils
 from trackio._batching import _PendingBatch
 from trackio.alerts import (
     AlertLevel,
@@ -174,6 +174,13 @@ class Run:
             command = None
         if command is not None:
             self.config["_Command"] = command
+        try:
+            self.config.update(provenance.collect())
+        except Exception as e:
+            self._warn_once(
+                "init-provenance",
+                f"trackio.init() could not record code provenance: {e}",
+            )
 
         self._queued_logs: list[LogEntry] = []
         self._queued_system_logs: list[SystemLogEntry] = []
