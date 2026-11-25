@@ -10,6 +10,12 @@ from trackio import cli, provenance
 from trackio.sqlite_storage import SQLiteStorage
 
 
+@pytest.fixture(autouse=True)
+def no_ambient_job(monkeypatch):
+    for name in ("HF_JOB_ID", "HF_JOB_OWNER", "HF_JOB_FLAVOR", "HF_JOB_IMAGE"):
+        monkeypatch.delenv(name, raising=False)
+
+
 @pytest.fixture
 def script(tmp_path, monkeypatch):
     path = tmp_path / "train.py"

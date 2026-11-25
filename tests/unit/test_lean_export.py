@@ -158,8 +158,14 @@ def test_cli_export_writes_module_and_prelude(temp_dir, tmp_path, monkeypatch):
 
     cli.main()
 
-    assert (tmp_path / "ToyAblation.lean").read_text().startswith("import Trackio")
-    assert "structure Q where" in (tmp_path / "Trackio.lean").read_text()
+    assert (
+        (tmp_path / "ToyAblation.lean")
+        .read_text(encoding="utf-8")
+        .startswith("import Trackio")
+    )
+    assert "structure Q where" in (tmp_path / "Trackio.lean").read_text(
+        encoding="utf-8"
+    )
 
 
 @pytest.mark.skipif(shutil.which("lake") is None, reason="Lean toolchain not installed")
@@ -173,7 +179,8 @@ def test_exported_module_proves_claims_in_lean(temp_dir, tmp_path):
         "    let a ← final .heads_1 .dev_bleu\n"
         "    let b ← final .heads_8 .dev_bleu\n"
         "    return Q.roundsTo (b - a) 0.9 1) := by decide\n"
-        "theorem no_loss_for_one_head : ¬ holds (final .heads_1 .loss |>.map (fun _ => true)) := by decide\n"
+        "theorem no_loss_for_one_head : ¬ holds (final .heads_1 .loss |>.map (fun _ => true)) := by decide\n",
+        encoding="utf-8",
     )
     (tmp_path / "lakefile.toml").write_text(
         'name = "claims"\ndefaultTargets = ["Claims"]\n\n'
