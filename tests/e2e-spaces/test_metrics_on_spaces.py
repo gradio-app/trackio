@@ -104,7 +104,7 @@ def test_runs_data_persisted_after_restart(test_space_id):
     run.log(metrics={"loss": 0.5})
     run.finish()
 
-    client = Client(test_space_id)
+    client = Client(test_space_id, hf_token=huggingface_hub.get_token())
 
     client.predict(api_name="/force_sync")
 
@@ -181,7 +181,7 @@ def test_bucket_space_preserves_logged_metrics_after_restart(test_space_id):
     trackio.log(metrics={"loss": 0.42, "acc": 0.88})
     trackio.finish()
 
-    client = Client(test_space_id)
+    client = Client(test_space_id, hf_token=huggingface_hub.get_token())
     client.predict(api_name="/force_sync")
 
     huggingface_hub.add_space_variable(

@@ -137,7 +137,7 @@ def test_sync_gradio_then_freeze_to_static(test_space_id, temp_dir):
 
     deploy.sync(project=project_name, space_id=test_space_id)
 
-    client = Client(test_space_id, verbose=False)
+    client = Client(test_space_id, hf_token=huggingface_hub.get_token(), verbose=False)
     client.predict(api_name="/force_sync")
     time.sleep(5)
 
