@@ -1,5 +1,11 @@
 # trackio
 
+## 0.46.0
+
+### Features
+
+- [#763](https://github.com/gradio-app/trackio/pull/763) [`9432e6b`](https://github.com/gradio-app/trackio/commit/9432e6b094f21ab5ea33dbde064c24521f7acd62) - Add `trackio export --format lean`, code provenance (`trackio verify`), and a Lean-generated model example.  Thanks @abidlabs!
+
 ## 0.45.1
 
 ### Features
