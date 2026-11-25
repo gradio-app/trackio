@@ -253,6 +253,45 @@ def _safe_get_latest_run_for_init(
         return None
 
 
+def _safe_get_config_for_init(
+    project: str,
+    run_name: str,
+    run_id: str | None,
+    space_id: str | None,
+    server_base_url: str | None,
+    resumed: bool,
+    remote_client: RemoteClient | None = None,
+) -> dict | None:
+    if not resumed:
+        return None
+    if (
+        space_id is not None or server_base_url is not None
+    ) and remote_client is not None:
+        source = space_id or server_base_url
+        try:
+            configs = remote_client.predict(
+                project=project, api_name="/get_run_configs"
+            )
+            if not isinstance(configs, dict):
+                return None
+            config = configs.get(run_id) if run_id is not None else None
+            if config is None:
+                config = configs.get(run_name)
+            return config if isinstance(config, dict) else None
+        except Exception as e:
+            _emit_nonfatal_warning(
+                f"trackio.init() could not recover the config for run '{run_name}' on '{source}': {e}. Continuing with the config passed to init()."
+            )
+            return None
+    try:
+        return SQLiteStorage.get_run_config(project, run_name, run_id=run_id)
+    except Exception as e:
+        _emit_nonfatal_warning(
+            f"trackio.init() could not recover the config for run '{run_name}': {e}. Continuing with the config passed to init()."
+        )
+        return None
+
+
 def _safe_get_last_step_for_init(
     project: str,
     run_name: str,
@@ -655,6 +694,20 @@ def init(
         else None
     )
 
+    resumed_config = (
+        _safe_get_config_for_init(
+            project,
+            name,
+            resolved_run_id,
+            space_id,
+            server_base_url,
+            resumed,
+            remote_client=remote_client,
+        )
+        if name is not None
+        else None
+    )
+
     auto_log_cpu_detected = False
     if auto_log_cpu is None:
         auto_log_cpu_detected = cpu_available()
@@ -695,6 +748,7 @@ def init(
         write_token=write_token_resolved,
         existing_runs=existing_runs,
         initial_last_step=initial_last_step,
+        resumed_config=resumed_config,
         auto_log_gpu=auto_log_gpu,
         gpu_log_interval=gpu_log_interval,
         auto_log_cpu=auto_log_cpu,

@@ -3852,7 +3852,12 @@ class SQLiteStorage:
 
     @staticmethod
     def _rewrite_metrics_rows(
-        metrics_rows, new_run_name, old_prefix, new_prefix, include_run_id=False
+        metrics_rows,
+        new_run_name,
+        old_prefix,
+        new_prefix,
+        include_run_id=False,
+        extra_columns: tuple[str, ...] = (),
     ):
         """Deserialize metrics rows, update media paths, and reserialize."""
         result = []
@@ -3870,8 +3875,25 @@ class SQLiteStorage:
             )
             if include_run_id:
                 values = values + (row["run_id"],)
+            values = values + tuple(row[col] for col in extra_columns)
             result.append(values)
         return result
+
+    @staticmethod
+    def _sync_columns(
+        source_conn: sqlite3.Connection, target_conn: sqlite3.Connection, table: str
+    ) -> tuple[str, ...]:
+        """
+        Columns that track pending uploads and retry deduplication for a row and
+        exist on both sides of a move, so they can be carried across with it.
+        """
+        source_columns = SQLiteStorage._table_columns(source_conn, table)
+        target_columns = SQLiteStorage._table_columns(target_conn, table)
+        return tuple(
+            col
+            for col in ("log_id", "space_id")
+            if col in source_columns and col in target_columns
+        )
 
     @staticmethod
     def _rewrite_trace_rows(
@@ -4003,13 +4025,8 @@ class SQLiteStorage:
                         )
 
                 try:
-                    select_cols = (
-                        "run_id, timestamp, step, metrics"
-                        if supports_run_ids
-                        else "timestamp, step, metrics"
-                    )
                     cursor.execute(
-                        f"SELECT {select_cols} FROM metrics WHERE {run_col} = ?",
+                        f"SELECT id, metrics FROM metrics WHERE {run_col} = ?",
                         (run_value,),
                     )
                     metrics_rows = cursor.fetchall()
@@ -4043,39 +4060,18 @@ class SQLiteStorage:
                         updated = SQLiteStorage._update_media_paths(
                             metrics_deserialized, old_prefix, new_prefix
                         )
-                        if supports_run_ids:
-                            updated_rows.append(
-                                (
-                                    row["run_id"],
-                                    row["timestamp"],
-                                    new_name,
-                                    row["step"],
-                                    orjson.dumps(serialize_values(updated)),
-                                )
+                        updated_rows.append(
+                            (
+                                new_name,
+                                orjson.dumps(serialize_values(updated)),
+                                row["id"],
                             )
-                        else:
-                            updated_rows.append(
-                                (
-                                    row["timestamp"],
-                                    new_name,
-                                    row["step"],
-                                    orjson.dumps(serialize_values(updated)),
-                                )
-                            )
+                        )
 
-                    cursor.execute(
-                        f"DELETE FROM metrics WHERE {run_col} = ?", (run_value,)
+                    cursor.executemany(
+                        "UPDATE metrics SET run_name = ?, metrics = ? WHERE id = ?",
+                        updated_rows,
                     )
-                    if supports_run_ids:
-                        cursor.executemany(
-                            "INSERT INTO metrics (run_id, timestamp, run_name, step, metrics) VALUES (?, ?, ?, ?, ?)",
-                            updated_rows,
-                        )
-                    else:
-                        cursor.executemany(
-                            "INSERT INTO metrics (timestamp, run_name, step, metrics) VALUES (?, ?, ?, ?)",
-                            updated_rows,
-                        )
 
                     config_col = (
                         "run_id"
@@ -4250,12 +4246,10 @@ class SQLiteStorage:
                         source_conn, run_name=run, run_id=run_id, table="traces"
                     )
 
-                    metrics_select = (
-                        "SELECT timestamp, step, metrics"
-                        + (", run_id" if metrics_has_run_id else "")
-                        + f" FROM metrics WHERE {metrics_col} = ?"
+                    source_cursor.execute(
+                        f"SELECT * FROM metrics WHERE {metrics_col} = ?",
+                        (metrics_val,),
                     )
-                    source_cursor.execute(metrics_select, (metrics_val,))
                     metrics_rows = source_cursor.fetchall()
 
                     config_row = None
@@ -4273,12 +4267,10 @@ class SQLiteStorage:
                     if system_identity is not None:
                         try:
                             system_col, system_val = system_identity
-                            system_select = (
-                                "SELECT timestamp, metrics"
-                                + (", run_id" if system_has_run_id else "")
-                                + f" FROM system_metrics WHERE {system_col} = ?"
+                            source_cursor.execute(
+                                f"SELECT * FROM system_metrics WHERE {system_col} = ?",
+                                (system_val,),
                             )
-                            source_cursor.execute(system_select, (system_val,))
                             system_metrics_rows = source_cursor.fetchall()
                         except sqlite3.OperationalError:
                             system_metrics_rows = []
@@ -4378,29 +4370,35 @@ class SQLiteStorage:
                         use_metrics_run_id = (
                             metrics_has_run_id and target_metrics_run_id
                         )
+                        metrics_sync_columns = SQLiteStorage._sync_columns(
+                            source_conn, target_conn, "metrics"
+                        )
                         updated_rows = SQLiteStorage._rewrite_metrics_rows(
                             metrics_rows,
                             run,
                             old_prefix,
                             new_prefix,
                             include_run_id=use_metrics_run_id,
+                            extra_columns=metrics_sync_columns,
                         )
-
+                        metrics_columns = ["timestamp", "run_name", "step", "metrics"]
                         if use_metrics_run_id:
-                            target_cursor.executemany(
-                                "INSERT INTO metrics (timestamp, run_name, step, metrics, run_id) VALUES (?, ?, ?, ?, ?)",
-                                updated_rows,
-                            )
-                        elif target_metrics_run_id and generated_run_id is not None:
-                            target_cursor.executemany(
-                                "INSERT INTO metrics (timestamp, run_name, step, metrics, run_id) VALUES (?, ?, ?, ?, ?)",
-                                [row + (generated_run_id,) for row in updated_rows],
-                            )
-                        else:
-                            target_cursor.executemany(
-                                "INSERT INTO metrics (timestamp, run_name, step, metrics) VALUES (?, ?, ?, ?)",
-                                updated_rows,
-                            )
+                            metrics_columns.append("run_id")
+                        metrics_columns.extend(metrics_sync_columns)
+                        if (
+                            not use_metrics_run_id
+                            and target_metrics_run_id
+                            and generated_run_id is not None
+                        ):
+                            metrics_columns.append("run_id")
+                            updated_rows = [
+                                row + (generated_run_id,) for row in updated_rows
+                            ]
+                        target_cursor.executemany(
+                            f"INSERT INTO metrics ({', '.join(metrics_columns)}) "
+                            f"VALUES ({', '.join('?' * len(metrics_columns))})",
+                            updated_rows,
+                        )
 
                         if config_row:
                             if (
@@ -4446,49 +4444,31 @@ class SQLiteStorage:
                                     ),
                                 )
 
+                        system_sync_columns = SQLiteStorage._sync_columns(
+                            source_conn, target_conn, "system_metrics"
+                        )
                         for row in system_metrics_rows:
+                            system_values = {
+                                "timestamp": row["timestamp"],
+                                "run_name": run,
+                                "metrics": row["metrics"],
+                            }
+                            if (
+                                system_has_run_id
+                                and target_system_run_id
+                                and "run_id" in row.keys()
+                            ):
+                                system_values["run_id"] = row["run_id"]
+                            elif target_system_run_id and generated_run_id is not None:
+                                system_values["run_id"] = generated_run_id
+                            for col in system_sync_columns:
+                                system_values[col] = row[col]
                             try:
-                                if (
-                                    system_has_run_id
-                                    and target_system_run_id
-                                    and "run_id" in row.keys()
-                                ):
-                                    target_cursor.execute(
-                                        """
-                                        INSERT INTO system_metrics (timestamp, run_name, metrics, run_id)
-                                        VALUES (?, ?, ?, ?)
-                                        """,
-                                        (
-                                            row["timestamp"],
-                                            run,
-                                            row["metrics"],
-                                            row["run_id"],
-                                        ),
-                                    )
-                                elif (
-                                    target_system_run_id
-                                    and generated_run_id is not None
-                                ):
-                                    target_cursor.execute(
-                                        """
-                                        INSERT INTO system_metrics (timestamp, run_name, metrics, run_id)
-                                        VALUES (?, ?, ?, ?)
-                                        """,
-                                        (
-                                            row["timestamp"],
-                                            run,
-                                            row["metrics"],
-                                            generated_run_id,
-                                        ),
-                                    )
-                                else:
-                                    target_cursor.execute(
-                                        """
-                                        INSERT INTO system_metrics (timestamp, run_name, metrics)
-                                        VALUES (?, ?, ?)
-                                        """,
-                                        (row["timestamp"], run, row["metrics"]),
-                                    )
+                                target_cursor.execute(
+                                    f"INSERT INTO system_metrics ({', '.join(system_values)}) "
+                                    f"VALUES ({', '.join('?' * len(system_values))})",
+                                    tuple(system_values.values()),
+                                )
                             except sqlite3.OperationalError:
                                 pass
 
