@@ -1,10 +1,11 @@
 """Launch `train_ablation.py` on Hugging Face Jobs.
 
 The job installs the Trackio wheel you pass (so it records code provenance),
-trains the requested variants with one worker per seed, uploads the project
-database to `--bucket`, and publishes the dashboard to the static `--space`.
-Each run's config records the job and the SHA-256 of the script HF Jobs ran,
-which `trackio verify` checks later.
+stages `generated_model.py` (written by `lake exe codegen` from Model.lean) next to
+the script, trains the requested variants with one worker per seed, uploads the
+project database to `--bucket`, and publishes the dashboard to the static
+`--space`. Each run's config records the job and the SHA-256 of the script and of
+`generated_model.py`, which `trackio verify` checks against what HF Jobs ran.
 
     uv build --wheel -o dist
     python examples/lean-claims/run_on_hf_jobs.py --trackio-wheel dist/trackio-*.whl \\
@@ -48,6 +49,8 @@ def main():
             args.space,
             "--trackio-wheel",
             str(wheel),
+            "--generated-model",
+            str(HERE / "generated_model.py"),
         ],
         dependencies=[f"/data/{wheel.name}"],
         env={"TRACKIO_DIR": "/tmp/trackio"},

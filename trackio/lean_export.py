@@ -127,6 +127,7 @@ class _ExportedRun:
     series: dict[str, list[tuple[int, Fraction]]] = field(default_factory=dict)
     config: dict[str, Any] = field(default_factory=dict)
     provenance: dict[str, str] = field(default_factory=dict)
+    code_files: dict[str, str] = field(default_factory=dict)
 
 
 def _is_finite_number(value: Any) -> bool:
@@ -265,6 +266,11 @@ def _collect_runs(
         ):
             if isinstance(value, str):
                 run.provenance[key] = value
+        files = code.get("files") or {}
+        if isinstance(files, dict):
+            run.code_files = {
+                str(k): v for k, v in sorted(files.items()) if isinstance(v, str)
+            }
         runs.append(run)
     return runs, skipped
 
@@ -281,6 +287,7 @@ def _digest(project: str, runs: list[_ExportedRun], exact: bool) -> str:
                     for key, value in sorted(run.config.items())
                 },
                 "provenance": dict(sorted(run.provenance.items())),
+                "code_files": run.code_files,
                 "series": {
                     metric: [
                         [step, f"{value.numerator}/{value.denominator}"]
@@ -423,6 +430,24 @@ def export_project_to_lean(
         lines += cases
         if len(cases) < len(runs):
             lines.append("  | _ => none")
+        lines.append("")
+
+    if any(run.code_files for run in runs):
+        lines += [
+            "/-- Local modules each run imported, with their SHA-256, recorded by `trackio.init`. -/",
+            "def codeFiles : Run → List (String × String)",
+        ]
+        cases = []
+        for run in runs:
+            if run.code_files:
+                items = ", ".join(
+                    f"({_lean_string(k)}, {_lean_string(v)})"
+                    for k, v in run.code_files.items()
+                )
+                cases.append(f"  | .{run.ident} => [{items}]")
+        lines += cases
+        if len(cases) < len(runs):
+            lines.append("  | _ => []")
         lines.append("")
 
     lines += [f"end {module}", ""]

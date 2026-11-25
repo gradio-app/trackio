@@ -1,6 +1,14 @@
 name = "lean_claims"
-defaultTargets = ["LeanClaims"]
+defaultTargets = ["LeanClaims", "codegen", "check"]
 
 [[lean_lib]]
 name = "LeanClaims"
-roots = ["Trackio", "Spec", "PaperTables", "AttentionAblation", "Conformance", "Claims"]
+roots = ["Trackio", "Spec", "PaperTables", "AttentionAblation", "Conformance", "Claims", "Model", "ModelProofs"]
+
+[[lean_exe]]
+name = "codegen"
+root = "Codegen"
+
+[[lean_exe]]
+name = "check"
+root = "Check"

@@ -2,14 +2,15 @@
 
 `trackio.init` stores three reserved config entries:
 
-- `_Code`: the entry script's file name, SHA-256 and size, plus the git commit
+- `_Code`: the entry script's file name, SHA-256 and size, the SHA-256 of every
+  local module it imported from its own directory (`files`), plus the git commit
   and dirty flag when the script lives in a git checkout.
 - `_Environment`: Python version, platform, and versions of common ML packages.
 - `_Job`: the Hugging Face Job running the script, when there is one.
 
-`verify_project_code` compares those records against a local file and, for runs
-on Hugging Face Jobs, against the script the Job actually executed, which Jobs
-keeps in the owner's `jobs-artifacts` bucket.
+`verify_project_code` compares those records against local files and, for runs on
+Hugging Face Jobs, against the files the Job actually executed, which Jobs keeps in
+the owner's `jobs-artifacts` bucket.
 """
 
 from __future__ import annotations
@@ -38,6 +39,7 @@ TRACKED_PACKAGES = (
 )
 
 JOBS_ARTIFACTS_MOUNT = "/data"
+MAX_LOCAL_MODULES = 50
 
 
 def sha256_file(path: str | Path) -> str:
@@ -72,6 +74,29 @@ def _git(path: Path, *args: str) -> str | None:
     return out.stdout.strip()
 
 
+def local_modules(script: Path) -> dict[str, str]:
+    """SHA-256 of each imported module that lives in the script's directory."""
+    root = script.parent
+    found: dict[str, str] = {}
+    for module in list(sys.modules.values()):
+        path = getattr(module, "__file__", None)
+        if not isinstance(path, str) or not path.endswith(".py"):
+            continue
+        if not os.path.isabs(path):
+            continue
+        resolved = Path(path).resolve()
+        if resolved == script or "site-packages" in resolved.parts:
+            continue
+        try:
+            rel = resolved.relative_to(root)
+            found[rel.as_posix()] = sha256_file(resolved)
+        except (ValueError, OSError):
+            continue
+        if len(found) >= MAX_LOCAL_MODULES:
+            break
+    return dict(sorted(found.items()))
+
+
 def code_provenance(script: Path | None = None) -> dict[str, Any] | None:
     script = script or entry_script()
     if script is None:
@@ -81,6 +106,9 @@ def code_provenance(script: Path | None = None) -> dict[str, Any] | None:
         "sha256": sha256_file(script),
         "bytes": script.stat().st_size,
     }
+    files = local_modules(script)
+    if files:
+        record["files"] = files
     commit = _git(script, "rev-parse", "HEAD")
     if commit:
         record["git_commit"] = commit
@@ -136,11 +164,19 @@ def collect() -> dict[str, Any]:
     return out
 
 
-def _executed_script_hash(job: dict, script_name: str, token: str | None) -> dict:
+def recorded_files(code: dict) -> dict[str, str]:
+    """Every file a run recorded: the entry script and its local modules."""
+    files = dict(code.get("files") or {})
+    if code.get("path") and code.get("sha256"):
+        files[code["path"]] = code["sha256"]
+    return files
+
+
+def _executed_hashes(job: dict, names: list[str], token: str | None) -> dict:
     info = huggingface_hub.inspect_job(
         job_id=job["id"], namespace=job.get("owner"), token=token
     )
-    result: dict[str, Any] = {"job_status": info.status.stage}
+    result: dict[str, Any] = {"job_status": info.status.stage, "executed": {}}
     volume = next(
         (
             v
@@ -150,68 +186,82 @@ def _executed_script_hash(job: dict, script_name: str, token: str | None) -> dic
         None,
     )
     if volume is None:
-        result["executed_sha256"] = None
-        result["detail"] = "job has no staged script (it ran a remote command or URL)"
+        result["detail"] = "job has no staged files (it ran a remote command or URL)"
         return result
-    remote = f"{volume.path}/{script_name}" if volume.path else script_name
+    prefix = f"{volume.path}/" if volume.path else ""
     with tempfile.TemporaryDirectory() as tmp:
-        local = Path(tmp) / script_name
+        targets = [
+            (prefix + name, Path(tmp) / name.replace("/", "__")) for name in names
+        ]
         huggingface_hub.download_bucket_files(
             volume.source,
-            [(remote, str(local))],
-            raise_on_missing_files=True,
+            [(remote, str(local)) for remote, local in targets],
+            raise_on_missing_files=False,
             token=token,
         )
-        result["executed_sha256"] = sha256_file(local)
-    result["executed_source"] = f"hf://buckets/{volume.source}/{remote}"
+        for name, (_, local) in zip(names, targets):
+            result["executed"][name] = sha256_file(local) if local.exists() else None
+    result["executed_source"] = f"hf://buckets/{volume.source}/{volume.path or ''}"
     return result
 
 
 def verify_project_code(
     project: str,
     configs: dict[str, dict],
-    file: str | Path | None = None,
+    files: list[str | Path] | None = None,
     check_jobs: bool = True,
     token: str | None = None,
 ) -> list[dict[str, Any]]:
-    """Return one verification record per run in `configs` (run -> config)."""
-    local_hash = sha256_file(file) if file else None
+    """Return one verification record per run in `configs` (run -> config).
+
+    Each local file in `files` is matched by name against what the run recorded,
+    and for runs on Hugging Face Jobs every recorded file is matched against the
+    copy the Job executed.
+    """
+    local = {Path(f).name: sha256_file(f) for f in files or []}
     job_cache: dict[str, dict] = {}
     rows = []
     for run, config in configs.items():
         code = config.get("_Code") or {}
         job = config.get("_Job") or {}
+        recorded = recorded_files(code)
         row: dict[str, Any] = {
             "run": run,
             "recorded_sha256": code.get("sha256"),
             "script": code.get("path"),
+            "recorded_files": recorded,
             "job_id": job.get("id"),
         }
         problems = []
         if not code:
             problems.append("no code provenance recorded")
-        if local_hash is not None:
-            row["local_sha256"] = local_hash
-            row["matches_local"] = local_hash == code.get("sha256")
-            if not row["matches_local"]:
-                problems.append("recorded hash differs from the local file")
-        if check_jobs and job.get("id") and code.get("path"):
-            key = f"{job['id']}/{code['path']}"
+        if local:
+            mismatched = [n for n, h in local.items() if recorded.get(n) != h]
+            row["matches_local"] = not mismatched
+            for name in mismatched:
+                if name not in recorded:
+                    problems.append(f"{name} was not recorded by this run")
+                else:
+                    problems.append(
+                        f"{name}: recorded hash differs from the local file"
+                    )
+        if check_jobs and job.get("id") and recorded:
+            key = f"{job['id']}/" + ",".join(sorted(recorded))
             if key not in job_cache:
                 try:
-                    job_cache[key] = _executed_script_hash(job, code["path"], token)
+                    job_cache[key] = _executed_hashes(job, sorted(recorded), token)
                 except Exception as e:
                     job_cache[key] = {"error": f"{type(e).__name__}: {e}"}
             executed = job_cache[key]
             row.update(executed)
             if "error" in executed:
-                problems.append("could not fetch the job's executed script")
-            elif executed.get("executed_sha256") is not None:
-                row["matches_executed"] = executed["executed_sha256"] == code.get(
-                    "sha256"
-                )
-                if not row["matches_executed"]:
-                    problems.append("recorded hash differs from the script the job ran")
+                problems.append("could not fetch the job's executed files")
+            elif executed.get("executed"):
+                bad = [
+                    n for n, h in recorded.items() if executed["executed"].get(n) != h
+                ]
+                row["matches_executed"] = not bad
+                problems += [f"{n}: the job ran different code" for n in bad]
             if executed.get("job_status") not in (None, "COMPLETED"):
                 problems.append(f"job status is {executed.get('job_status')}")
         row["ok"] = not problems

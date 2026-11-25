@@ -406,7 +406,7 @@ def _handle_verify(args):
     if args.run and not by_run:
         error_exit(f"Run '{args.run}' not found in project '{args.project}'.")
     rows = verify_project_code(
-        args.project, by_run, file=args.file, check_jobs=not args.no_jobs
+        args.project, by_run, files=args.file, check_jobs=not args.no_jobs
     )
     if args.json:
         print(format_json({"project": args.project, "runs": rows}))
@@ -414,25 +414,15 @@ def _handle_verify(args):
         for row in rows:
             status = "OK  " if row["ok"] else "FAIL"
             sha = (row["recorded_sha256"] or "none")[:19]
-            checks = []
-            if "matches_local" in row:
+            n = len(row["recorded_files"])
+            checks = [f"{n} file{'s' if n != 1 else ''} recorded"]
+            if row.get("matches_local"):
+                checks.append("local files match")
+            if row.get("matches_executed"):
                 checks.append(
-                    "local file " + ("matches" if row["matches_local"] else "DIFFERS")
+                    f"job {row['job_id']} ({row.get('job_status')}) ran this code"
                 )
-            if "matches_executed" in row:
-                checks.append(
-                    f"job {row['job_id']} ({row.get('job_status')}) ran "
-                    + ("this code" if row["matches_executed"] else "DIFFERENT code")
-                )
-            checks += [
-                p
-                for p in row["problems"]
-                if p
-                not in (
-                    "recorded hash differs from the local file",
-                    "recorded hash differs from the script the job ran",
-                )
-            ]
+            checks += row["problems"]
             print(
                 f"{status} {row['run']}: {row['script'] or '-'} {sha}  "
                 + "; ".join(checks)
@@ -1506,7 +1496,9 @@ def main():
     verify_parser.add_argument("--project", required=True, help="Project name")
     verify_parser.add_argument("--run", help="Only verify this run")
     verify_parser.add_argument(
-        "--file", help="Local script to compare against each run's recorded hash"
+        "--file",
+        action="append",
+        help="Local file to compare, by name, against each run's recorded hashes (repeatable: the script and the modules it imports)",
     )
     verify_parser.add_argument(
         "--no-jobs",

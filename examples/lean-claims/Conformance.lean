@@ -94,6 +94,15 @@ theorem one_script :
       allOf runs fun r => do return (← codeSha256 r) == h) := by
   decide
 
+/-- Every run imported the same `generated_model.py`, the model `lake exe codegen`
+writes from `Model.lean`. `trackio verify` matches this hash against a freshly
+generated file and against the copy HF Jobs ran. -/
+theorem one_generated_model :
+    holds (do
+      let h ← (codeFiles .base_s0).lookup "generated_model.py"
+      allOf runs fun r => do return (← (codeFiles r).lookup "generated_model.py") == h) := by
+  decide
+
 end Conformance
 
 #print axioms Conformance.attention_matches_paper

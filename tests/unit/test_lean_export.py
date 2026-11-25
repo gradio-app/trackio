@@ -104,7 +104,11 @@ def test_export_includes_code_provenance(temp_dir):
         steps=[0],
         config={
             "heads": 2,
-            "_Code": {"path": "train.py", "sha256": "sha256:abc"},
+            "_Code": {
+                "path": "train.py",
+                "sha256": "sha256:abc",
+                "files": {"generated_model.py": "sha256:def"},
+            },
             "_Job": {"id": "job42", "owner": "someone"},
         },
     )
@@ -115,6 +119,8 @@ def test_export_includes_code_provenance(temp_dir):
     assert '  | .from_job => some "sha256:abc"' in source
     assert '  | .from_job => some "job42"' in source
     assert "  | _ => none" in source.split("def codeSha256")[1]
+    assert "def codeFiles : Run → List (String × String)" in source
+    assert '  | .from_job => [("generated_model.py", "sha256:def")]' in source
 
 
 def test_export_of_missing_project_raises(temp_dir):
