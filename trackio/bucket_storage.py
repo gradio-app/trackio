@@ -3,7 +3,7 @@ from pathlib import Path
 
 import huggingface_hub
 
-from trackio.cas import is_partial_blob
+from trackio.cas import hash_file, is_partial_blob
 from trackio.sqlite_storage import SQLiteStorage
 from trackio.utils import (
     TRACKIO_DIR,
@@ -31,7 +31,19 @@ def upload_logbook_path_artifacts_to_bucket(
     for entry in entries:
         local_path = Path(entry["abs_path"])
         if not local_path.is_file():
+            if entry.get("digest"):
+                raise FileNotFoundError(
+                    f"Captured Logbook artifact is missing: {entry['path']}"
+                )
             continue
+        expected_digest = entry.get("digest")
+        if expected_digest:
+            actual_digest, actual_size = hash_file(local_path)
+            if actual_digest != expected_digest or actual_size != entry.get("size"):
+                raise ValueError(
+                    "Captured Logbook artifact failed integrity verification: "
+                    f"{entry['path']}"
+                )
         remote_path = f"{LOGBOOK_FILES_BUCKET_PREFIX}/{entry['path']}"
         additions.append((str(local_path), remote_path))
         uploaded.append(entry["path"])
