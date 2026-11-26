@@ -1,0 +1,6 @@
+name = "adam"
+defaultTargets = ["AdamClaims"]
+
+[[lean_lib]]
+name = "AdamClaims"
+roots = ["Trackio", "Spec", "AdamRuns", "Conformance", "Claims"]
