@@ -98,6 +98,37 @@ def upload_project_to_bucket(project: str, bucket_id: str) -> None:
     huggingface_hub.batch_bucket_files(bucket_id, add=files_to_add)
 
 
+def download_project_from_bucket(project: str, bucket_id: str, dest_dir: Path) -> Path:
+    """Downloads one project's database, media and artifact blobs from a bucket
+    written by `upload_project_to_bucket` into `dest_dir`, laid out like
+    `TRACKIO_DIR`. Returns the path of the downloaded database."""
+    canonical = canonical_project_name(project)
+    db_filename = SQLiteStorage.get_project_db_filename(project)
+    token = huggingface_hub.utils.get_token()
+    remote_paths = [f"trackio/{db_filename}"]
+    for kind in ("media", "artifacts"):
+        remote_paths += _list_bucket_file_paths(
+            bucket_id, prefix=f"trackio/{kind}/{canonical}/", token=token
+        )
+    dest_root = dest_dir.resolve()
+    downloads = []
+    for remote_path in remote_paths:
+        if is_partial_blob(Path(remote_path).name):
+            continue
+        local_path = (dest_root / remote_path.removeprefix("trackio/")).resolve()
+        if not local_path.is_relative_to(dest_root):
+            continue
+        local_path.parent.mkdir(parents=True, exist_ok=True)
+        downloads.append((remote_path, str(local_path)))
+    huggingface_hub.download_bucket_files(bucket_id, files=downloads, token=token)
+    db_path = dest_root / db_filename
+    if not db_path.is_file():
+        raise FileNotFoundError(
+            f"No database for project '{project}' found in bucket '{bucket_id}'."
+        )
+    return db_path
+
+
 def _download_db_from_bucket(
     project: str, bucket_id: str, dest_path: Path | None = None
 ) -> bool:

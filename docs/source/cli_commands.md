@@ -85,6 +85,30 @@ trackio sync --all
 | `--private` | Make the Space private if creating a new Gradio Space. Not supported with `--sdk static` |
 | `--force` | Overwrite the existing database without prompting |
 
+## Merge Command
+
+Combine one project that was logged by several parallel jobs into the local project database. For example, four Hugging Face Jobs that each log the project `memorization-capacity` and upload it to their own bucket with `upload_project_to_bucket`:
+
+```sh
+trackio merge --project memorization-capacity \
+    --bucket username/data-1x32 --bucket username/data-2x32 \
+    --bucket username/data-1x64 --bucket username/data-2x64
+```
+
+Each bucket's database, media and artifact blobs are downloaded and merged run by run. Runs are matched by run id, so merging the same bucket again only adds rows that are new since the last merge. Configs are copied as they are, so `trackio verify` still sees each run's `_Code` and `_Job` provenance.
+
+Two different runs with the same name stop the merge before anything is written. Pass `--on-conflict suffix` to rename the incoming run to `<name>-2`, `<name>-3`, … instead.
+
+| Flag | Description |
+|------|-------------|
+| `--project` | The project to merge (required) |
+| `--bucket` | A Hugging Face bucket written by `upload_project_to_bucket` (repeatable) |
+| `--source` | A local Trackio directory holding the project's `.db` file (and its `media/` and `artifacts/` folders), or the `.db` file itself (repeatable) |
+| `--on-conflict` | `error` (default) refuses to merge runs whose names collide; `suffix` renames them |
+| `--json` | Print the merge summary as JSON |
+
+The same is available from Python as `trackio.project_merge.merge_project(project, buckets=[...], sources=[...], on_conflict="error")`.
+
 ## Freeze Command
 
 Create a read-only static Space snapshot from a live Gradio Space:
