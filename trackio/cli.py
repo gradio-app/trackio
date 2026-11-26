@@ -46,6 +46,7 @@ from trackio.frontend_config import (
 )
 from trackio.lean_export import write_lean_export
 from trackio.markdown import Markdown
+from trackio.project_merge import ON_CONFLICT_CHOICES, merge_project
 from trackio.provenance import verify_project_code
 from trackio.registry_storage import parse_collection_target
 from trackio.remote_client import RemoteClient
@@ -429,6 +430,42 @@ def _handle_verify(args):
             )
     if not all(row["ok"] for row in rows):
         sys.exit(1)
+
+
+def _handle_merge(args):
+    if not args.bucket and not args.source:
+        error_exit("Provide at least one --bucket or --source.")
+    try:
+        result = merge_project(
+            args.project,
+            buckets=args.bucket,
+            sources=args.source,
+            on_conflict=args.on_conflict,
+        )
+    except (FileNotFoundError, ValueError) as e:
+        error_exit(str(e))
+    if args.json:
+        print(format_json(result))
+        return
+    print(
+        f"Merged {len(result['sources'])} source(s) into project "
+        f"'{result['project']}' ({result['db_path']})"
+    )
+    for source in result["sources"]:
+        runs = source["runs"]
+        new = sum(run["status"] == "new" for run in runs)
+        print(f"  {source['source']}: {len(runs)} run(s), {new} new")
+        for run in runs:
+            renamed = (
+                f" (renamed from '{run['source_name']}')"
+                if run["name"] != run["source_name"]
+                else ""
+            )
+            print(f"    {run['name']}{renamed}")
+    added = ", ".join(f"{table} +{n}" for table, n in result["rows_added"].items())
+    print(f"  Rows added: {added}")
+    if result["artifact_versions_added"]:
+        print(f"  Artifact versions added: {result['artifact_versions_added']}")
 
 
 def _handle_export(args):
@@ -1506,6 +1543,31 @@ def main():
         help="Skip fetching the executed script from Hugging Face Jobs",
     )
     verify_parser.add_argument(
+        "--json", action="store_true", help="Output in JSON format"
+    )
+
+    merge_parser = subparsers.add_parser(
+        "merge",
+        help="Combine one project logged by several parallel jobs (e.g. one bucket per Hugging Face Job) into the local project database",
+    )
+    merge_parser.add_argument("--project", required=True, help="Project name")
+    merge_parser.add_argument(
+        "--bucket",
+        action="append",
+        help="Hugging Face bucket written by upload_project_to_bucket (repeatable)",
+    )
+    merge_parser.add_argument(
+        "--source",
+        action="append",
+        help="Local Trackio directory holding the project's .db file (and media/, artifacts/), or the .db file itself (repeatable)",
+    )
+    merge_parser.add_argument(
+        "--on-conflict",
+        choices=ON_CONFLICT_CHOICES,
+        default="error",
+        help="What to do when different runs share a name: 'error' (default) refuses the merge, 'suffix' renames incoming runs to <name>-2, <name>-3, ...",
+    )
+    merge_parser.add_argument(
         "--json", action="store_true", help="Output in JSON format"
     )
 
@@ -2592,6 +2654,8 @@ def main():
         _handle_verify(args)
     elif args.command == "export":
         _handle_export(args)
+    elif args.command == "merge":
+        _handle_merge(args)
     elif args.command == "query":
         if args.query_type == "project":
             _handle_query(args)
