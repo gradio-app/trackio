@@ -78,6 +78,10 @@ def Value.bool? : Value → Option Bool
   | .bool b => some b
   | _ => none
 
+def Value.str? : Value → Option String
+  | .str s => some s
+  | _ => none
+
 /-- One logged metric: `(step, value)` pairs in logging order. -/
 abbrev Series := List (Nat × Q)
 
@@ -146,5 +150,128 @@ def allOf {α : Type} (xs : List α) (f : α → Option Bool) : Option Bool :=
     let a ← acc
     let b ← f x
     return a && b) (some true : Option Bool)
+
+/-! ## Printed numbers -/
+
+/-- `m × 10^e` (so `sci 804 2` is 80400, which a table prints as 8.04 × 10⁴). -/
+def sci (m : Int) (e : Int) : Q :=
+  if e ≥ 0 then q (m * ((10 ^ e.toNat : Nat) : Int)) else q m (10 ^ (-e).toNat)
+
+/-- `x` is what a table shows as the `digits`-digit mantissa `m` scaled by `10^e`:
+`|x - m·10^e| ≤ ½·10^e`. -/
+def printsAs (x : Q) (m : Int) (e : Int) : Bool :=
+  let unit := sci 1 e
+  decide (Q.abs (x - q m * unit) * 2 ≤ unit)
+
+/-! ## Exact enclosures of real functions
+
+Real numbers like `exp x` and `√x` are not rational, so claims about them use closed
+intervals of rationals that contain the true value. Bounds are rounded outward to a
+fixed binary precision, which keeps numbers small without losing soundness.
+-/
+
+namespace Exact
+
+def norm (a : Q) : Q :=
+  let g := Nat.gcd a.num.natAbs a.den
+  if g ≤ 1 then a else ⟨a.num / (g : Int), a.den / g⟩
+
+def add (a b : Q) : Q := norm (a + b)
+def sub (a b : Q) : Q := norm (a - b)
+def mul (a b : Q) : Q := norm (a * b)
+
+/-- `1 / a` for `a ≠ 0`. -/
+def inv (a : Q) : Q :=
+  if a.num < 0 then ⟨-(a.den : Int), a.num.natAbs⟩ else ⟨(a.den : Int), a.num.toNat⟩
+
+def div (a b : Q) : Q := mul a (inv b)
+
+/-- The largest multiple of `2^-bits` that is `≤ a`, and the smallest that is `≥ a`. -/
+def floorTo (a : Q) (bits : Nat) : Q :=
+  norm ⟨(a.num * ((2 ^ bits : Nat) : Int)) / (a.den : Int), 2 ^ bits⟩
+def ceilTo (a : Q) (bits : Nat) : Q :=
+  norm ⟨-((-a.num * ((2 ^ bits : Nat) : Int)) / (a.den : Int)), 2 ^ bits⟩
+
+/-- A closed interval `[lo, hi]` of rationals. -/
+structure Interval where
+  lo : Q
+  hi : Q
+
+namespace Interval
+
+def exact (x : Q) : Interval := ⟨x, x⟩
+def add (a b : Interval) : Interval := ⟨Exact.add a.lo b.lo, Exact.add a.hi b.hi⟩
+def sub (a b : Interval) : Interval := ⟨Exact.sub a.lo b.hi, Exact.sub a.hi b.lo⟩
+def neg (a : Interval) : Interval := ⟨-a.hi, -a.lo⟩
+
+def mul (a b : Interval) : Interval :=
+  let ps := [Exact.mul a.lo b.lo, Exact.mul a.lo b.hi, Exact.mul a.hi b.lo, Exact.mul a.hi b.hi]
+  ⟨ps.foldl Q.min (ps.headD 0), ps.foldl Q.max (ps.headD 0)⟩
+
+/-- `1 / a` for an interval of positive numbers. -/
+def invPos (a : Interval) : Interval := ⟨inv a.hi, inv a.lo⟩
+
+def divPos (a b : Interval) : Interval := mul a (invPos b)
+
+def round (a : Interval) (bits : Nat := 96) : Interval := ⟨floorTo a.lo bits, ceilTo a.hi bits⟩
+
+def clamp (a : Interval) (lo hi : Q) : Interval :=
+  ⟨Q.min (Q.max a.lo lo) hi, Q.min (Q.max a.hi lo) hi⟩
+
+/-- Certainly `a < b`, certainly `a ≤ b`, certainly `0 < a`. -/
+def lt (a b : Interval) : Bool := decide (a.hi < b.lo)
+def le (a b : Interval) : Bool := decide (a.hi ≤ b.lo)
+def pos (a : Interval) : Bool := decide (0 < a.lo)
+
+end Interval
+
+/-- `⌊√n⌋` by Newton's method from above. `sqrt` checks the answer, so a wrong result
+here can only make `sqrt` return `none`. -/
+def isqrt (n : Nat) : Nat :=
+  if n < 2 then n
+  else
+    let rec go : Nat → Nat → Nat
+      | 0, y => y
+      | fuel + 1, y => let y' := (y + n / y) / 2; if y' < y then go fuel y' else y
+    go 256 (2 ^ (Nat.log2 n / 2 + 1))
+
+/-- An interval of width `2^-bits` containing `√x`, for `x ≥ 0`. -/
+def sqrt (x : Q) (bits : Nat := 96) : Option Interval :=
+  if x.num < 0 then none
+  else
+    let n := (x.num.toNat * 4 ^ bits) / x.den
+    let s := isqrt n
+    if s * s ≤ n && n < (s + 1) * (s + 1) then
+      some ⟨q s (2 ^ bits), q (s + 1) (2 ^ bits)⟩
+    else none
+
+/-- `√` of an interval of non-negative numbers. -/
+def sqrtI (a : Interval) (bits : Nat := 96) : Option Interval := do
+  let lo ← sqrt (Q.max a.lo 0) bits
+  let hi ← sqrt a.hi bits
+  return ⟨lo.lo, hi.hi⟩
+
+/-- The Taylor sum `Σ_{k ≤ n} y^k/k!` and a bound `2·|y|^(n+1)/(n+1)!` on the rest,
+valid for `|y| ≤ 1/2`, where `e^|y| < 2`. -/
+def taylor (y : Q) (n : Nat) : Q × Q :=
+  let (s, last) := (List.range n).foldl
+    (fun (acc : Q × Q) k => let t := mul acc.2 (mul y (q 1 (k + 1))); (add acc.1 t, t)) (1, 1)
+  (s, mul (mul (Q.abs (mul last y)) (q 1 (n + 1))) 2)
+
+/-- An interval containing `exp x`, for any rational `x`: `x/2^k` is brought into
+`[-1/2, 1/2]`, bounded by a Taylor sum and its remainder, then squared `k` times. -/
+def exp (x : Q) (bits : Nat := 96) : Interval :=
+  let k := Nat.log2 ((Q.abs x).num.natAbs / (Q.abs x).den + 1) + 1
+  let y := norm ⟨x.num, x.den * 2 ^ k⟩
+  let (s, r) := taylor y 24
+  let base : Interval := Interval.round ⟨sub s r, add s r⟩ bits
+  (List.range k).foldl (fun acc _ => Interval.round (Interval.mul acc acc) bits) base
+
+/-- An interval containing the logistic function `σ(x) = 1 / (1 + e^-x)`. -/
+def sigmoid (x : Q) (bits : Nat := 96) : Interval :=
+  let e := exp (-x) bits
+  Interval.round ⟨inv (add 1 e.hi), inv (add 1 e.lo)⟩ bits
+
+end Exact
 
 end Trackio

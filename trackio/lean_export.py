@@ -411,6 +411,7 @@ def export_project_to_lean(
         lines += [
             "",
             "def cfg (r : Run) (k : Key) : Option Q := (config r k).bind Value.num?",
+            "def cfgStr (r : Run) (k : Key) : Option String := (config r k).bind Value.str?",
             "",
         ]
 

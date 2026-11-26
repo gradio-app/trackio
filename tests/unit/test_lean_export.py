@@ -55,6 +55,7 @@ def test_export_writes_runs_metrics_and_config(temp_dir):
     assert "  | .heads_8, .optimizer_beta2 => some (.num (q 49 50))" in source
     assert '  | .heads_8, .optimizer_name => some (.str "adam")' in source
     assert "  | .heads_8, .tied => some (.bool true)" in source
+    assert "def cfgStr (r : Run) (k : Key) : Option String" in source
     assert "_Username" not in source
     assert "Non-finite values skipped: 1." in source
     assert "  | _, _ => []" in source
