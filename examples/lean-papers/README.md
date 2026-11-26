@@ -20,6 +20,23 @@ training script logged. The scripts ran on Hugging Face Jobs, launched with
 records the SHA-256 of the script it ran and the job's ID. `trackio verify` checks both
 against the script in this folder and against the copy the job executed.
 
+## Results at a glance
+
+**Memorization.** Most of the paper's numbers fail to agree with each other: the "3.5–3.6
+bits per parameter" headline holds for 3 of Table 1's 16 rows, Figure 6's α is outside its
+own error bar, Tables 3 and 4 use α = 3.54 rather than the stated 3.642 and give two results
+for one configuration, and the membership-inference law as printed predicts Table 2 in
+reverse order. The rerun supports the qualitative claims (small datasets are memorized
+completely, memorization plateaus, capacity scales with parameters) but at 3% of the
+paper's training steps reaches only 69–81% of Table 1's capacities.
+
+**Adam.** The code that ran implements Algorithm 1 exactly. The step-size bound, the AdaMax
+bound and Theorem 4.1 are false as stated. Of Section 6's seven empirical sentences, two hold
+in our rerun, two are ties the paper reads as wins, and three are contradicted, including
+the claim that `v̂` is dominated by ε (it exceeds ε by four orders of magnitude).
+
+Details are in each folder's README.
+
 ## Three kinds of checks
 
 1. **The paper against itself.** Numbers transcribed from the paper (tables, formulas, the

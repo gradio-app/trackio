@@ -3,4 +3,4 @@ defaultTargets = ["Memorization"]
 
 [[lean_lib]]
 name = "Memorization"
-roots = ["Trackio", "Paper"]
+roots = ["Trackio", "Paper", "MemorizationCapacity", "Claims"]
